@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "tranzrmoves.fullname" . }}-test-connection"
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['{{ .Values.services.gateway.name }}:{{ .Values.services.gateway.port }}']
+  restartPolicy: Never

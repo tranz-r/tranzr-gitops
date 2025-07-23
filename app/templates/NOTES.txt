@@ -1,0 +1,91 @@
+🚀 TranzrMoves has been successfully deployed!
+
+Deployments:
+{{- if .Values.deployments.gateway.enabled }}
+  ✅ tranzr-gateway: {{ .Values.deployments.gateway.replicaCount }} replica(s)
+    - Image: {{ .Values.deployments.gateway.image.repository }}:{{ .Values.deployments.gateway.image.tag | default .Chart.AppVersion }}
+    - Service: {{ .Values.services.gateway.name }} ({{ .Values.services.gateway.type }})
+    {{- if .Values.deployments.gateway.autoscaling.enabled }}
+    - Autoscaling: {{ .Values.deployments.gateway.autoscaling.minReplicas }}-{{ .Values.deployments.gateway.autoscaling.maxReplicas }} replicas
+    {{- end }}
+{{- end }}
+
+{{- if .Values.deployments.service.enabled }}
+  ✅ tranzr-service: {{ .Values.deployments.service.replicaCount }} replica(s)
+    - Image: {{ .Values.deployments.service.image.repository }}:{{ .Values.deployments.service.image.tag | default .Chart.AppVersion }}
+    - Service: {{ .Values.services.service.name }} ({{ .Values.services.service.type }})
+    {{- if .Values.deployments.service.autoscaling.enabled }}
+    - Autoscaling: {{ .Values.deployments.service.autoscaling.minReplicas }}-{{ .Values.deployments.service.autoscaling.maxReplicas }} replicas
+    {{- end }}
+{{- end }}
+
+External Access:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  🌐 https://{{ $host.host }}
+{{- end }}
+{{- else }}
+  ⚠️  Ingress is disabled. To access the gateway service:
+  
+  1. Port forward to the gateway service:
+     kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ .Values.services.gateway.name }} 8080:{{ .Values.services.gateway.port }}
+  
+  2. Access the application at: http://127.0.0.1:8080
+{{- end }}
+
+External Secrets:
+{{- if .Values.externalSecrets.enabled }}
+  🔐 Application secrets: {{ .Values.externalSecrets.name }}
+{{- end }}
+{{- if .Values.externalSecrets.createImagePullSecret }}
+  🔐 GitHub registry credentials: {{ (index .Values.imagePullSecrets 0).name }}
+{{- end }}
+
+Useful Commands:
+  📊 Check deployment status:
+    kubectl get deployments --namespace {{ .Release.Namespace }}
+  
+  📋 View pods:
+    kubectl get pods --namespace {{ .Release.Namespace }}
+  
+  📝 View logs (gateway):
+    kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/component=gateway
+  
+  📝 View logs (service):
+    kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/component=service
+  
+  🔍 Check external secrets:
+    kubectl get externalsecrets --namespace {{ .Release.Namespace }}
+
+  🔧 Scale deployments:
+    kubectl scale deployment {{ .Values.deployments.gateway.name }} --replicas=<count> --namespace {{ .Release.Namespace }}
+    kubectl scale deployment {{ .Values.deployments.service.name }} --replicas=<count> --namespace {{ .Release.Namespace }}
+
+💡 Configuration Tips:
+  
+  To add application secrets, update values.yaml:
+  
+  externalSecrets:
+    applicationSecrets:
+      - secretKey: my-secret-name
+        description: "Description of the secret"
+        remoteRef:
+          key: azure-keyvault-secret-name
+  
+  Then reference in deployment environment variables:
+  
+  deployments:
+    gateway:
+      environmentVariables:
+        - name: MY_ENV_VAR
+          secretKey: my-secret-name
+
+📖 External Secrets Structure:
+  
+  This chart follows Azure Key Vault best practices:
+  - Direct mapping from Azure Key Vault secrets to Kubernetes secrets
+  - No complex templating for simple secrets
+  - Separate dockerconfigjson secret for image pulls
+  - Consistent with external-secrets.io documentation
+
+For more information, visit: https://docs.labgrid.net

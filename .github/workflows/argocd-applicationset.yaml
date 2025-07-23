@@ -1,0 +1,96 @@
+name: Terraform Deployment of ArgoCD Application Sets
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [deploy-argocd]
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'app/**'
+      - '!app/Chart.yaml'  # Triggered by semantic release instead
+
+env:
+  TF_VERSION: 1.5.7
+
+jobs:
+  terraform-deploy:
+    runs-on: ubuntu-latest
+    steps:
+     - name: Show trigger context
+       run: |
+         echo "Workflow triggered by: ${{ github.event_name }}"
+         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+           echo "Repository dispatch type: ${{ github.event.action }}"
+           echo "New version: ${{ github.event.client_payload.version }}"
+           echo "Reference: ${{ github.event.client_payload.ref }}"
+         fi
+         
+     - name: Checkout
+       uses: actions/checkout@v4
+
+     - name: Setup Terraform
+       uses: hashicorp/setup-terraform@v3
+       with:
+         terraform_version: ${{ env.TF_VERSION }}
+        
+
+     - name: Set Terraform Environment Variables
+       run: |
+          echo "ARM_CLIENT_ID=$(jq -r .clientId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=$(jq -r .clientSecret <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=$(jq -r .tenantId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=$(jq -r .subscriptionId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+
+     # Set up kubeconfig from the GitHub Secret
+     - name: Get OIDC Token from Keycloak
+       run: |
+            TOKEN=$(curl -X POST \
+            ${{ secrets.KEYCLOAK_ISSUER_URL }}/protocol/openid-connect/token \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=github-actions" \
+            -d "client_secret=${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            -d "grant_type=client_credentials" | jq -r '.access_token')
+            echo "Generated token for Kubernetes access"
+            echo "OIDC_TOKEN=$TOKEN" >> $GITHUB_ENV
+
+     - name: Terraform Init
+       working-directory: ./app
+       run: terraform init -upgrade
+
+     - name: Terraform Validate
+       working-directory: ./app
+       run: terraform validate
+
+     - name: Terraform Plan
+       working-directory: ./app
+       env:
+         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
+         TF_VAR_k8s_token: ${{ env.OIDC_TOKEN }}
+         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+       run: terraform plan
+
+     - name: Terraform Apply
+       working-directory: ./app
+       env:
+         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
+         TF_VAR_k8s_token: ${{ env.OIDC_TOKEN }}
+         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+       run: terraform apply -auto-approve
+
+     - name: Deployment Summary
+       run: |
+         echo "🎯 **ArgoCD ApplicationSet Deployment Complete!**" >> $GITHUB_STEP_SUMMARY
+         echo "" >> $GITHUB_STEP_SUMMARY
+         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+           echo "- **Triggered by:** Semantic Release" >> $GITHUB_STEP_SUMMARY
+           echo "- **New Version:** ${{ github.event.client_payload.version }}" >> $GITHUB_STEP_SUMMARY
+         else
+           echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+         fi
+         echo "- **ApplicationSet:** tranzr-moves" >> $GITHUB_STEP_SUMMARY
+         echo "- **Target Namespace:** tranzr-moves-system" >> $GITHUB_STEP_SUMMARY
+         echo "- **Terraform Status:** Applied successfully ✅" >> $GITHUB_STEP_SUMMARY
+       

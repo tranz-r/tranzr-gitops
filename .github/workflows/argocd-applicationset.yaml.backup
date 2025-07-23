@@ -1,0 +1,71 @@
+name: Terraform Deployment of ArgoCD Application Sets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+    # paths:
+    #   - Apps/**
+
+env:
+  TF_VERSION: 1.5.7
+
+jobs:
+  terraform-deploy:
+    runs-on: ubuntu-latest
+    steps:
+     - name: Checkout
+       uses: actions/checkout@v4
+
+     - name: Setup Terraform
+       uses: hashicorp/setup-terraform@v3
+       with:
+         terraform_version: ${{ env.TF_VERSION }}
+        
+
+     - name: Set Terraform Environment Variables
+       run: |
+          echo "ARM_CLIENT_ID=$(jq -r .clientId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_CLIENT_SECRET=$(jq -r .clientSecret <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_TENANT_ID=$(jq -r .tenantId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+          echo "ARM_SUBSCRIPTION_ID=$(jq -r .subscriptionId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
+
+     # Set up kubeconfig from the GitHub Secret
+     - name: Get OIDC Token from Keycloak
+       run: |
+            TOKEN=$(curl -X POST \
+            ${{ secrets.KEYCLOAK_ISSUER_URL }}/protocol/openid-connect/token \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            -d "client_id=github-actions" \
+            -d "client_secret=${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
+            -d "grant_type=client_credentials" | jq -r '.access_token')
+            echo "generated token is: $TOKEN"
+            echo "OIDC_TOKEN=$TOKEN" >> $GITHUB_ENV
+
+     - name: Terraform Init
+       working-directory: ./app
+       run: terraform init -upgrade
+
+     - name: Terraform Validate
+       working-directory: ./app
+       run: terraform validate
+
+     - name: Terraform Plan
+       working-directory: ./app
+       env:
+         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
+         TF_VAR_k8s_token: $OIDC_TOKEN
+         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+       run: terraform plan
+
+     - name: Terraform Apply
+       working-directory: ./app
+       env:
+         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
+         TF_VAR_k8s_token: $OIDC_TOKEN
+         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+       run: terraform apply -auto-approve
+       
+       

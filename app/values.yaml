@@ -1,0 +1,253 @@
+# Default values for tranzrmoves.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  defaultStorageClass: "synology-iscsi-delete"
+
+# Namespace override
+namespaceOverride: "tranzr-moves"
+
+# Deployments configuration
+deployments:
+  gateway:
+    name: tranzr-gateway
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: ghcr.io/labgrid/tranzr-gateway
+      pullPolicy: IfNotPresent
+      tag: "latest"
+    
+    # Container port configuration
+    containerPort: 8080
+    
+    # Environment variables mapping - specify which secrets each service needs
+    environmentVariables:
+      # Example gateway-specific environment variables
+      # - name: DATABASE_URL
+      #   secretKey: gateway-database-url
+      # - name: API_KEY
+      #   secretKey: gateway-api-key
+      # - name: JWT_SECRET
+      #   secretKey: gateway-jwt-secret
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    
+    # Probes configuration
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 5
+    
+    # Autoscaling configuration
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+  service:
+    name: tranzr-service
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: ghcr.io/labgrid/tranzr-service
+      pullPolicy: IfNotPresent
+      tag: "latest"
+    
+    # Container port configuration
+    containerPort: 8080
+    
+    # Environment variables mapping - specify which secrets each service needs
+    environmentVariables:
+      # Example service-specific environment variables
+      # - name: DATABASE_URL
+      #   secretKey: service-database-url
+      # - name: REDIS_URL
+      #   secretKey: service-redis-url
+      # - name: MESSAGE_QUEUE_URL
+      #   secretKey: service-mq-url
+    
+    # Resource configuration
+    resources:
+      requests:
+        cpu: 300m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+    # Probes configuration
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 5
+    
+    # Autoscaling configuration
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+# Image pull secrets configuration
+imagePullSecrets:
+  - name: github-registry-secret
+
+# Service accounts configuration
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# Pod configuration
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 2000
+
+securityContext:
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Services configuration
+services:
+  gateway:
+    name: tranzr-gateway
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  
+  service:
+    name: tranzr-service
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-production"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  hosts:
+    - host: tranzr-gw.labgrid.net
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: tranzr-gateway
+          servicePort: 80
+  tls:
+    - secretName: tranzr-gateway-tls
+      hosts:
+        - tranzr-gw.labgrid.net
+
+# Consolidated External Secrets configuration
+externalSecrets:
+  enabled: true
+  name: tranzrmoves-secrets
+  refreshInterval: "1h"
+  secretStoreRef:
+    name: azure-kv-cluster-store
+    kind: ClusterSecretStore
+  
+  # GitHub registry configuration
+  githubRegistry:
+    usernameKey: github-registry-username
+    tokenKey: github-registry-token
+  
+  # Create separate image pull secret (dockerconfigjson type)
+  createImagePullSecret: true
+  
+  # Application secrets - add all your application secrets here
+  # Simple direct mapping from Azure Key Vault to Kubernetes secret
+  applicationSecrets:
+    # Gateway secrets
+    # - secretKey: gateway-database-url
+    #   description: "Gateway database connection URL"
+    #   remoteRef:
+    #     key: tranzr-gateway-database-url
+    # - secretKey: gateway-api-key
+    #   description: "Gateway API key"
+    #   remoteRef:
+    #     key: tranzr-gateway-api-key
+    # - secretKey: gateway-jwt-secret
+    #   description: "Gateway JWT signing secret"
+    #   remoteRef:
+    #     key: tranzr-gateway-jwt-secret
+    
+    # Service secrets
+    # - secretKey: service-database-url
+    #   description: "Service database connection URL"
+    #   remoteRef:
+    #     key: tranzr-service-database-url
+    # - secretKey: service-redis-url
+    #   description: "Service Redis connection URL"
+    #   remoteRef:
+    #     key: tranzr-service-redis-url
+    # - secretKey: service-mq-url
+    #   description: "Service message queue connection URL"
+    #   remoteRef:
+    #     key: tranzr-service-mq-url
+
+# Node selector, tolerations, and affinity
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - tranzrmoves
+          topologyKey: kubernetes.io/hostname
+
+# Additional volumes and volume mounts
+volumes: []
+volumeMounts: []

@@ -1,0 +1,23 @@
+{{- if .Values.deployments.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.service.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: service
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.services.service.type }}
+  ports:
+    - port: {{ .Values.services.service.port }}
+      targetPort: {{ .Values.services.service.targetPort }}
+      protocol: {{ .Values.services.service.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: service
+{{- end }} 

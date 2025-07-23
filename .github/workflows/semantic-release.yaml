@@ -1,0 +1,97 @@
+name: Semantic Release and Chart Version Update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - '!app/Chart.yaml'  # Avoid infinite loops when Chart.yaml is updated
+
+env:
+  CHART_PATH: app/Chart.yaml
+
+jobs:
+  semantic-release:
+    runs-on: ubuntu-latest
+    outputs:
+      new-release-published: ${{ steps.semantic.outputs.new-release-published }}
+      new-release-version: ${{ steps.semantic.outputs.new-release-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Semantic Release
+        id: semantic
+        uses: go-semantic-release/action@v1.24.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          allow-initial-development-versions: true
+          force-bump-patch-version: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Chart.yaml appVersion
+        if: steps.semantic.outputs.new-release-published == 'true'
+        run: |
+          NEW_VERSION="${{ steps.semantic.outputs.new-release-version }}"
+          echo "Updating Chart.yaml appVersion to: $NEW_VERSION"
+          
+          # Update appVersion in Chart.yaml
+          sed -i "s/^appVersion: .*/appVersion: \"$NEW_VERSION\"/" ${{ env.CHART_PATH }}
+          
+          # Also update chart version (increment patch version)
+          CURRENT_CHART_VERSION=$(grep '^version:' ${{ env.CHART_PATH }} | sed 's/version: //')
+          echo "Current chart version: $CURRENT_CHART_VERSION"
+          
+          # Simple patch increment for chart version
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_CHART_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+          NEW_PATCH=$((PATCH + 1))
+          NEW_CHART_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          
+          sed -i "s/^version: .*/version: $NEW_CHART_VERSION/" ${{ env.CHART_PATH }}
+          
+          echo "Updated chart version to: $NEW_CHART_VERSION"
+          
+          # Display changes
+          echo "=== Chart.yaml Changes ==="
+          cat ${{ env.CHART_PATH }} | grep -E "^(version|appVersion):"
+
+      - name: Commit Chart.yaml changes
+        if: steps.semantic.outputs.new-release-published == 'true'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add ${{ env.CHART_PATH }}
+          git commit -m "chore: update Chart.yaml versions [skip ci]"
+          git push
+
+  trigger-deployment:
+    needs: semantic-release
+    if: needs.semantic-release.outputs.new-release-published == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ArgoCD Deployment
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-argocd
+          client-payload: |
+            {
+              "version": "${{ needs.semantic-release.outputs.new-release-version }}",
+              "ref": "${{ github.ref }}"
+            }
+
+      - name: Summary
+        run: |
+          echo "🚀 **Semantic Release Complete!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **New Version:** ${{ needs.semantic-release.outputs.new-release-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Chart.yaml Updated:** ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- **ArgoCD Deployment Triggered:** ✅" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,36 @@
+{{- if .Values.deployments.gateway.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.deployments.gateway.name }}-hpa
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.deployments.gateway.name }}
+  minReplicas: {{ .Values.deployments.gateway.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.deployments.gateway.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.deployments.gateway.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.deployments.gateway.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.deployments.gateway.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.deployments.gateway.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }} 

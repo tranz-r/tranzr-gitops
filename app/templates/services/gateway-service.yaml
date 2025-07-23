@@ -1,0 +1,23 @@
+{{- if .Values.deployments.gateway.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.gateway.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.services.gateway.type }}
+  ports:
+    - port: {{ .Values.services.gateway.port }}
+      targetPort: {{ .Values.services.gateway.targetPort }}
+      protocol: {{ .Values.services.gateway.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: gateway
+{{- end }} 
