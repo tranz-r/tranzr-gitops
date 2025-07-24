@@ -4,13 +4,8 @@ on:
   workflow_dispatch:
   repository_dispatch:
     types: [deploy-argocd]
-  push:
-    branches:
-      - main
-      - develop
-    paths:
-      - 'app/**'
-      - '!app/Chart.yaml'  # Triggered by semantic release instead
+  # Removed push trigger - this workflow should only run after semantic release
+  # or manual dispatch to prevent race conditions
 
 env:
   TF_VERSION: 1.5.7
