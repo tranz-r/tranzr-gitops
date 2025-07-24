@@ -18,7 +18,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.14.2"
+      tag: "0.15.0"
     
     # Container port configuration
     containerPort: 8080
@@ -33,13 +33,11 @@ deployments:
         value: "production"
     
     # Environment variables from External Secrets
-    envFromSecrets: []
-      # - name: JWT_SECRET
-      #   secretKey: gateway-jwt-secret
-      # - name: API_KEY
-      #   secretKey: gateway-api-key
-      # - name: DATABASE_URL
-      #   secretKey: gateway-database-url
+    envFromSecrets:
+      - name: SUPER_BASE_JWT_SECRET_KEY
+        secretKey: supabase-jwt-secret-key
+      - name: SUPER_BASE_PROJECT_ID
+        secretKey: supabase-project-id
     
     # Resource configuration
     resources:
@@ -80,7 +78,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.1.6"
+      tag: "0.2.0"
     
     # Container port configuration
     containerPort: 8080
@@ -104,6 +102,10 @@ deployments:
         secretKey: supabase-url
       - name: SUPABASE_KEY
         secretKey: supabase-key
+      - name: ADDRESS_API_KEY
+        secretKey: getaddressio-address-api-key
+      - name: ADDRESS_ADMINISTRATION_KEY
+        secretKey: getaddressio-address-administration-key
     
     # Resource configuration
     resources:
@@ -221,14 +223,14 @@ externalSecrets:
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
     # Gateway secrets - currently none configured
-    # - secretKey: gateway-jwt-secret
-    #   description: "Gateway JWT signing secret"
-    #   remoteRef:
-    #     key: tranzr-gateway-jwt-secret
-    # - secretKey: gateway-api-key
-    #   description: "Gateway API key"
-    #   remoteRef:
-    #     key: tranzr-gateway-api-key
+    - secretKey: supabase-jwt-secret-key
+      description: "Supabase JWT signing secret"
+      remoteRef:
+        key: supabase-jwt-secret-key
+    - secretKey: supabase-project-id
+      description: "Supabase project ID"
+      remoteRef:
+        key: supabase-project-id
     
     # Backend secrets
     - secretKey: tranzr-stripe-api-key
@@ -243,6 +245,14 @@ externalSecrets:
       description: "Supabase service key"
       remoteRef:
         key: supabase-key
+    - secretKey: getaddressio-address-api-key
+      description: "GetAddress.io API key"
+      remoteRef:
+        key: getaddressio-address-api-key
+    - secretKey: getaddressio-address-administration-key
+      description: "GetAddress.io administration key"
+      remoteRef:
+        key: getaddressio-address-administration-key
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
