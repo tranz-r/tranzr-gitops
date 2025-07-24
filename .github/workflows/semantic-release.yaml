@@ -8,6 +8,12 @@ on:
       - 'app/**'
       - '!app/Chart.yaml'  # Avoid infinite loops when Chart.yaml is updated
 
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+
 env:
   CHART_PATH: app/Chart.yaml
 
