@@ -220,33 +220,29 @@ externalSecrets:
   # Application secrets - add all your application secrets here
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
-    # Gateway secrets
-    - secretKey: gateway-jwt-secret
-      description: "Gateway JWT signing secret"
-      remoteRef:
-        key: tranzr-gateway-jwt-secret
-    - secretKey: gateway-api-key
-      description: "Gateway API key"
-      remoteRef:
-        key: tranzr-gateway-api-key
-    # - secretKey: gateway-database-url
-    #   description: "Gateway database connection URL"
+    # Gateway secrets - currently none configured
+    # - secretKey: gateway-jwt-secret
+    #   description: "Gateway JWT signing secret"
     #   remoteRef:
-    #     key: tranzr-gateway-database-url
+    #     key: tranzr-gateway-jwt-secret
+    # - secretKey: gateway-api-key
+    #   description: "Gateway API key"
+    #   remoteRef:
+    #     key: tranzr-gateway-api-key
     
     # Backend secrets
-    - secretKey: backend-database-url
-      description: "Backend database connection URL"
+    - secretKey: tranzr-stripe-api-key
+      description: "Stripe API key for payment processing"
       remoteRef:
-        key: tranzr-backend-database-url
-    - secretKey: backend-redis-url
-      description: "Backend Redis connection URL"
+        key: tranzr-stripe-api-key
+    - secretKey: supabase-url
+      description: "Supabase database URL"
       remoteRef:
-        key: tranzr-backend-redis-url
-    # - secretKey: backend-mq-url
-    #   description: "Backend message queue connection URL"
-    #   remoteRef:
-    #     key: tranzr-backend-mq-url
+        key: supabase-url
+    - secretKey: supabase-key
+      description: "Supabase service key"
+      remoteRef:
+        key: supabase-key
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}

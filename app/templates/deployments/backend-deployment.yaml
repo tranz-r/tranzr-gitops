@@ -28,7 +28,9 @@ spec:
         app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: backend
-        {{- include "tranzrmoves.labels" . | nindent 8 }}
+        helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
