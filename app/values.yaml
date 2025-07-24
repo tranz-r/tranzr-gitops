@@ -62,8 +62,8 @@ deployments:
       httpGet:
         path: /ready
         port: http
-      initialDelaySeconds: 5
-      periodSeconds: 5
+      initialDelaySeconds: 15
+      periodSeconds: 15
     
     # Autoscaling configuration
     autoscaling:
