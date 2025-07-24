@@ -46,8 +46,8 @@ jobs:
           echo "new-release-published: '${{ steps.semantic.outputs.new-release-published }}'"
           echo "new-release-version: '${{ steps.semantic.outputs.new-release-version }}'"
           echo "version: '${{ steps.semantic.outputs.version }}'"
-          echo "changelog: '${{ steps.semantic.outputs.changelog }}'"
-          echo "All outputs: ${{ toJson(steps.semantic.outputs) }}"
+          echo "changelog exists: ${{ steps.semantic.outputs.changelog != '' }}"
+          echo "All outputs (JSON): ${{ toJson(steps.semantic.outputs) }}"
 
       - name: Update Chart.yaml appVersion
         if: steps.semantic.outputs.version != '' && steps.semantic.outputs.version != null
