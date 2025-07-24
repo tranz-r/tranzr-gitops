@@ -16,22 +16,30 @@ deployments:
     enabled: true
     replicaCount: 2
     image:
-      repository: ghcr.io/labgrid/tranzr-gateway
+      repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "latest"
+      tag: "0.13.1"
     
     # Container port configuration
     containerPort: 8080
     
-    # Environment variables mapping - specify which secrets each service needs
-    environmentVariables:
-      # Example gateway-specific environment variables
-      # - name: DATABASE_URL
-      #   secretKey: gateway-database-url
-      # - name: API_KEY
-      #   secretKey: gateway-api-key
+    # Regular environment variables (plain values)
+    env:
+      - name: LOG_LEVEL
+        value: "info"
+      - name: PORT
+        value: "8080"
+      - name: NODE_ENV
+        value: "production"
+    
+    # Environment variables from External Secrets
+    envFromSecrets: []
       # - name: JWT_SECRET
       #   secretKey: gateway-jwt-secret
+      # - name: API_KEY
+      #   secretKey: gateway-api-key
+      # - name: DATABASE_URL
+      #   secretKey: gateway-database-url
     
     # Resource configuration
     resources:
@@ -65,27 +73,37 @@ deployments:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
-  service:
+  backend:
     name: tranzr-service
     enabled: true
-    replicaCount: 3
+    replicaCount: 2
     image:
-      repository: ghcr.io/labgrid/tranzr-service
+      repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "latest"
+      tag: "0.1.4"
     
     # Container port configuration
     containerPort: 8080
     
-    # Environment variables mapping - specify which secrets each service needs
-    environmentVariables:
-      # Example service-specific environment variables
-      # - name: DATABASE_URL
-      #   secretKey: service-database-url
-      # - name: REDIS_URL
-      #   secretKey: service-redis-url
-      # - name: MESSAGE_QUEUE_URL
-      #   secretKey: service-mq-url
+    # Regular environment variables (plain values)
+    env:
+      - name: LOG_LEVEL
+        value: "debug"
+      - name: PORT
+        value: "8080"
+      - name: NODE_ENV
+        value: "production"
+      - name: CACHE_TTL
+        value: "300"
+    
+    # Environment variables from External Secrets
+    envFromSecrets:
+      - name: STRIPE_API_KEY
+        secretKey: tranzr-stripe-api-key
+      - name: SUPABASE_URL
+        secretKey: supabase-url
+      - name: SUPABASE_KEY
+        secretKey: supabase-key
     
     # Resource configuration
     resources:
@@ -154,7 +172,7 @@ services:
     targetPort: 8080
     protocol: TCP
   
-  service:
+  backend:
     name: tranzr-service
     type: ClusterIP
     port: 80
@@ -203,32 +221,32 @@ externalSecrets:
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
     # Gateway secrets
+    - secretKey: gateway-jwt-secret
+      description: "Gateway JWT signing secret"
+      remoteRef:
+        key: tranzr-gateway-jwt-secret
+    - secretKey: gateway-api-key
+      description: "Gateway API key"
+      remoteRef:
+        key: tranzr-gateway-api-key
     # - secretKey: gateway-database-url
     #   description: "Gateway database connection URL"
     #   remoteRef:
     #     key: tranzr-gateway-database-url
-    # - secretKey: gateway-api-key
-    #   description: "Gateway API key"
-    #   remoteRef:
-    #     key: tranzr-gateway-api-key
-    # - secretKey: gateway-jwt-secret
-    #   description: "Gateway JWT signing secret"
-    #   remoteRef:
-    #     key: tranzr-gateway-jwt-secret
     
-    # Service secrets
-    # - secretKey: service-database-url
-    #   description: "Service database connection URL"
+    # Backend secrets
+    - secretKey: backend-database-url
+      description: "Backend database connection URL"
+      remoteRef:
+        key: tranzr-backend-database-url
+    - secretKey: backend-redis-url
+      description: "Backend Redis connection URL"
+      remoteRef:
+        key: tranzr-backend-redis-url
+    # - secretKey: backend-mq-url
+    #   description: "Backend message queue connection URL"
     #   remoteRef:
-    #     key: tranzr-service-database-url
-    # - secretKey: service-redis-url
-    #   description: "Service Redis connection URL"
-    #   remoteRef:
-    #     key: tranzr-service-redis-url
-    # - secretKey: service-mq-url
-    #   description: "Service message queue connection URL"
-    #   remoteRef:
-    #     key: tranzr-service-mq-url
+    #     key: tranzr-backend-mq-url
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}

@@ -10,12 +10,12 @@ Deployments:
     {{- end }}
 {{- end }}
 
-{{- if .Values.deployments.service.enabled }}
-  ✅ tranzr-service: {{ .Values.deployments.service.replicaCount }} replica(s)
-    - Image: {{ .Values.deployments.service.image.repository }}:{{ .Values.deployments.service.image.tag | default .Chart.AppVersion }}
-    - Service: {{ .Values.services.service.name }} ({{ .Values.services.service.type }})
-    {{- if .Values.deployments.service.autoscaling.enabled }}
-    - Autoscaling: {{ .Values.deployments.service.autoscaling.minReplicas }}-{{ .Values.deployments.service.autoscaling.maxReplicas }} replicas
+{{- if .Values.deployments.backend.enabled }}
+  ✅ tranzr-backend: {{ .Values.deployments.backend.replicaCount }} replica(s)
+    - Image: {{ .Values.deployments.backend.image.repository }}:{{ .Values.deployments.backend.image.tag | default .Chart.AppVersion }}
+    - Service: {{ .Values.services.backend.name }} ({{ .Values.services.backend.type }})
+    {{- if .Values.deployments.backend.autoscaling.enabled }}
+    - Autoscaling: {{ .Values.deployments.backend.autoscaling.minReplicas }}-{{ .Values.deployments.backend.autoscaling.maxReplicas }} replicas
     {{- end }}
 {{- end }}
 
@@ -51,15 +51,15 @@ Useful Commands:
   📝 View logs (gateway):
     kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/component=gateway
   
-  📝 View logs (service):
-    kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/component=service
+  📝 View logs (backend):
+    kubectl logs --namespace {{ .Release.Namespace }} -l app.kubernetes.io/component=backend
   
   🔍 Check external secrets:
     kubectl get externalsecrets --namespace {{ .Release.Namespace }}
 
   🔧 Scale deployments:
     kubectl scale deployment {{ .Values.deployments.gateway.name }} --replicas=<count> --namespace {{ .Release.Namespace }}
-    kubectl scale deployment {{ .Values.deployments.service.name }} --replicas=<count> --namespace {{ .Release.Namespace }}
+    kubectl scale deployment {{ .Values.deployments.backend.name }} --replicas=<count> --namespace {{ .Release.Namespace }}
 
 💡 Configuration Tips:
   

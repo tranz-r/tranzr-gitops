@@ -54,14 +54,13 @@ spec:
             - name: http
               containerPort: {{ .Values.deployments.gateway.containerPort }}
               protocol: TCP
-          {{- if .Values.externalSecrets.enabled }}
-          envFrom:
-            - secretRef:
-                name: {{ .Values.externalSecrets.name }}
-          {{- end }}
-          {{- if .Values.deployments.gateway.environmentVariables }}
+          {{- if or .Values.deployments.gateway.env .Values.deployments.gateway.envFromSecrets }}
           env:
-            {{- range .Values.deployments.gateway.environmentVariables }}
+            {{- range .Values.deployments.gateway.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.deployments.gateway.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
                 secretKeyRef:

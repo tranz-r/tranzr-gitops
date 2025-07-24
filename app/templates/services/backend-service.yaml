@@ -1,23 +1,23 @@
-{{- if .Values.deployments.service.enabled }}
+{{- if .Values.deployments.backend.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Values.services.service.name }}
+  name: {{ .Values.services.backend.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
   labels:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: service
+    app.kubernetes.io/component: backend
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.services.service.type }}
+  type: {{ .Values.services.backend.type }}
   ports:
-    - port: {{ .Values.services.service.port }}
-      targetPort: {{ .Values.services.service.targetPort }}
-      protocol: {{ .Values.services.service.protocol }}
+    - port: {{ .Values.services.backend.port }}
+      targetPort: {{ .Values.services.backend.targetPort }}
+      protocol: {{ .Values.services.backend.protocol }}
       name: http
   selector:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: service
+    app.kubernetes.io/component: backend
 {{- end }} 

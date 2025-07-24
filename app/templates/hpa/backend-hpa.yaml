@@ -1,36 +1,36 @@
-{{- if .Values.deployments.service.autoscaling.enabled }}
+{{- if .Values.deployments.backend.autoscaling.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: {{ .Values.deployments.service.name }}-hpa
+  name: {{ .Values.deployments.backend.name }}-hpa
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
   labels:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: service
+    app.kubernetes.io/component: backend
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: {{ .Values.deployments.service.name }}
-  minReplicas: {{ .Values.deployments.service.autoscaling.minReplicas }}
-  maxReplicas: {{ .Values.deployments.service.autoscaling.maxReplicas }}
+    name: {{ .Values.deployments.backend.name }}
+  minReplicas: {{ .Values.deployments.backend.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.deployments.backend.autoscaling.maxReplicas }}
   metrics:
-    {{- if .Values.deployments.service.autoscaling.targetCPUUtilizationPercentage }}
+    {{- if .Values.deployments.backend.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: {{ .Values.deployments.service.autoscaling.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.deployments.backend.autoscaling.targetCPUUtilizationPercentage }}
     {{- end }}
-    {{- if .Values.deployments.service.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- if .Values.deployments.backend.autoscaling.targetMemoryUtilizationPercentage }}
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: {{ .Values.deployments.service.autoscaling.targetMemoryUtilizationPercentage }}
+          averageUtilization: {{ .Values.deployments.backend.autoscaling.targetMemoryUtilizationPercentage }}
     {{- end }}
 {{- end }} 

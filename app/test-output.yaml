@@ -1,0 +1,440 @@
+---
+# Source: tranzrmoves/templates/serviceaccount/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tranzrmoves
+  labels:
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+automountServiceAccountToken: true
+---
+# Source: tranzrmoves/templates/services/backend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: tranzr-service
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-backend
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: backend
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: tranzrmoves-backend
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: backend
+---
+# Source: tranzrmoves/templates/services/gateway-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: tranzr-gateway
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-gateway
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: gateway
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: tranzrmoves-gateway
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: gateway
+---
+# Source: tranzrmoves/templates/deployments/backend-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tranzr-service
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-backend
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: backend
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tranzrmoves-backend
+      app.kubernetes.io/instance: tranzrmoves
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tranzrmoves-backend
+        app.kubernetes.io/instance: tranzrmoves
+        app.kubernetes.io/component: backend
+        helm.sh/chart: tranzrmoves-0.1.0
+        app.kubernetes.io/name: tranzrmoves
+        app.kubernetes.io/instance: tranzrmoves
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      imagePullSecrets:
+        - name: github-registry-secret
+      serviceAccountName: tranzrmoves
+      securityContext:
+        fsGroup: 2000
+      containers:
+        - name: tranzr-service
+          securityContext:
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          image: "ghcr.io/labgrid/tranzr-service:latest"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: tranzrmoves-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi
+            requests:
+              cpu: 300m
+              memory: 256Mi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - tranzrmoves
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+---
+# Source: tranzrmoves/templates/deployments/gateway-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tranzr-gateway
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-gateway
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: gateway
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tranzrmoves-gateway
+      app.kubernetes.io/instance: tranzrmoves
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tranzrmoves-gateway
+        app.kubernetes.io/instance: tranzrmoves
+        app.kubernetes.io/component: gateway
+        helm.sh/chart: tranzrmoves-0.1.0
+        app.kubernetes.io/name: tranzrmoves
+        app.kubernetes.io/instance: tranzrmoves
+        app.kubernetes.io/version: "1.16.0"
+        app.kubernetes.io/managed-by: Helm
+    spec:
+      imagePullSecrets:
+        - name: github-registry-secret
+      serviceAccountName: tranzrmoves
+      securityContext:
+        fsGroup: 2000
+      containers:
+        - name: tranzr-gateway
+          securityContext:
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+          image: "ghcr.io/tranz-r/api-gateway:0.13.1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: tranzrmoves-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                  - tranzrmoves
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+---
+# Source: tranzrmoves/templates/hpa/backend-hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tranzr-service-hpa
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-backend
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: backend
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tranzr-service
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+# Source: tranzrmoves/templates/hpa/gateway-hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tranzr-gateway-hpa
+  namespace: default
+  labels:
+    app.kubernetes.io/name: tranzrmoves-gateway
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/component: gateway
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tranzr-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+# Source: tranzrmoves/templates/ingress/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tranzrmoves-ingress
+  namespace: default
+  labels:
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: 10m
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - "tranzr-gw.labgrid.net"
+      secretName: tranzr-gateway-tls
+  rules:
+    - host: "tranzr-gw.labgrid.net"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tranzr-gateway
+                port:
+                  number: 80
+---
+# Source: tranzrmoves/templates/external-secrets/application-secrets.yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: tranzrmoves-secrets
+  namespace: default
+  labels:
+    app.kubernetes.io/component: "tranzrmoves-secrets"
+    app.kubernetes.io/name: "tranzrmoves"
+    app.kubernetes.io/instance: "tranzrmoves"
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: azure-kv-cluster-store
+    kind: ClusterSecretStore
+  target:
+    name: tranzrmoves-secrets
+    creationPolicy: Owner
+  data:
+---
+# Source: tranzrmoves/templates/external-secrets/imagepull-secrets.yaml
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: github-registry-secret
+  namespace: default
+  labels:
+    app.kubernetes.io/component: "github-registry-secret"
+    app.kubernetes.io/name: "tranzrmoves"
+    app.kubernetes.io/instance: "tranzrmoves"
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: azure-kv-cluster-store
+    kind: ClusterSecretStore
+  target:
+    template:
+      type: kubernetes.io/dockerconfigjson
+      engineVersion: v2
+      data:
+        .dockerconfigjson: |
+          {
+            "auths": {
+              "ghcr.io": {
+                "username": "{{ .github_registry_username }}",
+                "password": "{{ .github_registry_token }}",
+                "auth": "{{ printf "%s:%s" .github_registry_username .github_registry_token | b64enc }}"
+              }
+            }
+          }
+  data:
+    - secretKey: github_registry_username
+      remoteRef:
+        key: github-registry-username
+    - secretKey: github_registry_token
+      remoteRef:
+        key: github-registry-token
+---
+# Source: tranzrmoves/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "tranzrmoves-test-connection"
+  namespace: default
+  labels:
+    helm.sh/chart: tranzrmoves-0.1.0
+    app.kubernetes.io/name: tranzrmoves
+    app.kubernetes.io/instance: tranzrmoves
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['tranzr-gateway:80']
+  restartPolicy: Never

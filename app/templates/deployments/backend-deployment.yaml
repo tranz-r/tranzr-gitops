@@ -1,23 +1,23 @@
-{{- if .Values.deployments.service.enabled }}
+{{- if .Values.deployments.backend.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.deployments.service.name }}
+  name: {{ .Values.deployments.backend.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
   labels:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: service
+    app.kubernetes.io/component: backend
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.deployments.service.autoscaling.enabled }}
-  replicas: {{ .Values.deployments.service.replicaCount }}
+  {{- if not .Values.deployments.backend.autoscaling.enabled }}
+  replicas: {{ .Values.deployments.backend.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
       app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: service
+      app.kubernetes.io/component: backend
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -25,9 +25,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-service
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
         app.kubernetes.io/instance: {{ .Release.Name }}
-        app.kubernetes.io/component: service
+        app.kubernetes.io/component: backend
         {{- include "tranzrmoves.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
@@ -43,25 +43,24 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Values.deployments.service.name }}
+        - name: {{ .Values.deployments.backend.name }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.deployments.service.image.repository }}:{{ .Values.deployments.service.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.deployments.service.image.pullPolicy }}
+          image: "{{ .Values.deployments.backend.image.repository }}:{{ .Values.deployments.backend.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.deployments.backend.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.deployments.service.containerPort }}
+              containerPort: {{ .Values.deployments.backend.containerPort }}
               protocol: TCP
-          {{- if .Values.externalSecrets.enabled }}
-          envFrom:
-            - secretRef:
-                name: {{ .Values.externalSecrets.name }}
-          {{- end }}
-          {{- if .Values.deployments.service.environmentVariables }}
+          {{- if or .Values.deployments.backend.env .Values.deployments.backend.envFromSecrets }}
           env:
-            {{- range .Values.deployments.service.environmentVariables }}
+            {{- range .Values.deployments.backend.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.deployments.backend.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
                 secretKeyRef:
@@ -69,15 +68,15 @@ spec:
                   key: {{ .secretKey }}
             {{- end }}
           {{- end }}
-          {{- with .Values.deployments.service.livenessProbe }}
+          {{- with .Values.deployments.backend.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.deployments.service.readinessProbe }}
+          {{- with .Values.deployments.backend.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.deployments.service.resources }}
+          {{- with .Values.deployments.backend.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
