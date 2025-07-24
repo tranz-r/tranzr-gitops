@@ -47,7 +47,20 @@ jobs:
           echo "new-release-version: '${{ steps.semantic.outputs.new-release-version }}'"
           echo "version: '${{ steps.semantic.outputs.version }}'"
           echo "changelog exists: ${{ steps.semantic.outputs.changelog != '' }}"
-          echo "All outputs (JSON): ${{ toJson(steps.semantic.outputs) }}"
+
+      - name: Check Condition Logic
+        run: |
+          echo "=== Condition Check ==="
+          VERSION="${{ steps.semantic.outputs.version }}"
+          echo "Version value: '$VERSION'"
+          echo "Version not empty: ${{ steps.semantic.outputs.version != '' }}"
+          echo "Version not null: ${{ steps.semantic.outputs.version != null }}"
+          echo "Combined condition: ${{ steps.semantic.outputs.version != '' && steps.semantic.outputs.version != null }}"
+          if [ -n "$VERSION" ] && [ "$VERSION" != "null" ]; then
+            echo "✅ Should proceed with Chart.yaml update"
+          else
+            echo "❌ Will skip Chart.yaml update"
+          fi
 
       - name: Update Chart.yaml appVersion
         if: steps.semantic.outputs.version != '' && steps.semantic.outputs.version != null
