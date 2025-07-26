@@ -18,7 +18,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.16.0"
+      tag: "0.16.1"
     
     # Container port configuration
     containerPort: 8080
@@ -74,11 +74,11 @@ deployments:
   backend:
     name: tranzr-service
     enabled: true
-    replicaCount: 2
+    replicaCount: 1
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.3.3"
+      tag: "0.4.0"
     
     # Container port configuration
     containerPort: 8080
@@ -136,7 +136,7 @@ deployments:
     # Autoscaling configuration
     autoscaling:
       enabled: true
-      minReplicas: 2
+      minReplicas: 1
       maxReplicas: 15
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80

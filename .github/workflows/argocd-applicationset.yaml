@@ -75,6 +75,24 @@ jobs:
          TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
        run: terraform apply -auto-approve
 
+     - name: Trigger ArgoCD Application Sync
+       env:
+         ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+       run: |
+         # Install ArgoCD CLI
+         curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+         sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+         rm argocd-linux-amd64
+         
+         # Login to ArgoCD (using admin password)
+         argocd login $ARGOCD_SERVER --username admin --password ${{ secrets.ARGOCD_ADMIN_PASSWORD }} --insecure
+         
+         # Sync the application (fire and forget)
+         echo "🔄 Triggering sync for tranzr-moves application..."
+         argocd app sync tranzr-moves --force
+         
+         echo "✅ Sync triggered successfully! ArgoCD will complete the deployment in the background."
+
      - name: Deployment Summary
        run: |
          echo "🎯 **ArgoCD ApplicationSet Deployment Complete!**" >> $GITHUB_STEP_SUMMARY
@@ -88,4 +106,5 @@ jobs:
          echo "- **ApplicationSet:** tranzr-moves" >> $GITHUB_STEP_SUMMARY
          echo "- **Target Namespace:** tranzr-moves-system" >> $GITHUB_STEP_SUMMARY
          echo "- **Terraform Status:** Applied successfully ✅" >> $GITHUB_STEP_SUMMARY
+         echo "- **ArgoCD Sync:** Triggered (completing in background) 🚀" >> $GITHUB_STEP_SUMMARY
        
