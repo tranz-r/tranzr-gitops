@@ -79,13 +79,22 @@ jobs:
        env:
          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
        run: |
+         # Debug environment variables
+         echo "🔍 Debug: ARGOCD_SERVER = $ARGOCD_SERVER"
+         
          # Install ArgoCD CLI
+         echo "📦 Installing ArgoCD CLI..."
          curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
          sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
          rm argocd-linux-amd64
          
+         # Verify ArgoCD CLI installation
+         echo "✅ ArgoCD CLI version:"
+         argocd version --client
+         
          # Login to ArgoCD (using admin password)
-         argocd login $ARGOCD_SERVER --username admin --password ${{ secrets.ARGOCD_ADMIN_PASSWORD }} --insecure
+         echo "🔐 Logging into ArgoCD at: $ARGOCD_SERVER"
+         argocd login "$ARGOCD_SERVER" --username admin --password "${{ secrets.ARGOCD_ADMIN_PASSWORD }}" --insecure
          
          # Sync the application (fire and forget)
          echo "🔄 Triggering sync for tranzr-moves application..."
