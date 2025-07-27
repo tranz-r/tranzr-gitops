@@ -78,7 +78,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.5.0"
+      tag: "0.5.1"
     
     # Container port configuration
     containerPort: 8080
