@@ -93,6 +93,12 @@ deployments:
         value: "production"
       - name: CACHE_TTL
         value: "300"
+      - name: AWS_SES_SMTP_PORT
+        value: "587"
+      - name: FROM_EMAIL
+        value: "bookings@tranzrmoves.com"
+      - name: FROM_NAME
+        value: "Tranzr Moves"
     
     # Environment variables from External Secrets
     envFromSecrets:
@@ -108,6 +114,12 @@ deployments:
         secretKey: getaddressio-address-administration-key
       - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET
         secretKey: tranzr-stripe-webhook-signing-secret
+      - name: AWS_SES_SMTP_HOST
+        secretKey: aws-ses-smtp-host
+      - name: AWS_SES_SMTP_USERNAME
+        secretKey: aws-ses-smtp-username
+      - name: AWS_SES_SMTP_PASSWORD
+        secretKey: aws-ses-smtp-password
     
     # Resource configuration
     resources:
@@ -259,6 +271,18 @@ externalSecrets:
       description: "Stripe webhook signing secret"
       remoteRef:
         key: tranzr-stripe-webhook-signing-secret
+    - secretKey: aws-ses-smtp-host
+      description: "AWS SES SMTP host"
+      remoteRef:
+        key: aws-ses-smtp-host
+    - secretKey: aws-ses-smtp-username
+      description: "AWS SES SMTP username"
+      remoteRef:
+        key: aws-ses-smtp-username
+    - secretKey: aws-ses-smtp-password
+      description: "AWS SES SMTP password"
+      remoteRef:
+        key: aws-ses-smtp-password
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
