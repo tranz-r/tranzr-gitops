@@ -1,0 +1,94 @@
+{{- if .Values.jobs.dbMigration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tranzrmoves.fullname" . }}-db-migration
+  labels:
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.jobs.dbMigration.backoffLimit | default 3 }}
+  template:
+    metadata:
+      labels:
+        {{- include "tranzrmoves.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-migration
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      restartPolicy: Never
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      
+      # Init container to check PostgreSQL connectivity
+      initContainers:
+        - name: postgresql-connectivity-check
+          image: postgres:15-alpine
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Checking PostgreSQL connectivity..."
+              until pg_isready -h {{ .Values.jobs.dbMigration.database.host }} -p {{ .Values.jobs.dbMigration.database.port | default 5432 }}; do
+                echo "PostgreSQL is not ready yet. Waiting..."
+                sleep 2
+              done
+              echo "PostgreSQL is ready!"
+          resources:
+            {{- toYaml .Values.jobs.dbMigration.initContainer.resources | nindent 12 }}
+      
+      # Main migration container
+      containers:
+        - name: db-migrator
+          image: "{{ .Values.jobs.dbMigration.image.repository }}:{{ .Values.jobs.dbMigration.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.jobs.dbMigration.image.pullPolicy | default "IfNotPresent" }}
+          
+          # Environment variables for database connection
+          {{- if or .Values.jobs.dbMigration.env .Values.jobs.dbMigration.envFromSecrets }}
+          env:
+            {{- range .Values.jobs.dbMigration.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+            {{- range .Values.jobs.dbMigration.envFromSecrets }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: {{ .secretKey }}
+            {{- end }}
+          {{- end }}
+          
+          resources:
+            {{- toYaml .Values.jobs.dbMigration.resources | nindent 12 }}
+          
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      
+
+{{- end }} 

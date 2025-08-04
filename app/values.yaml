@@ -99,6 +99,8 @@ deployments:
         value: "bookings@tranzrmoves.com"
       - name: FROM_NAME
         value: "Tranzr Moves"
+      - name: AWS_DEFAULT_REGION
+        value: "eu-west-2"
     
     # Environment variables from External Secrets
     envFromSecrets:
@@ -120,6 +122,12 @@ deployments:
         secretKey: aws-ses-smtp-username
       - name: AWS_SES_SMTP_PASSWORD
         secretKey: aws-ses-smtp-password
+      - name: AWS_ACCESS_KEY_ID
+        secretKey: aws-access-key-id
+      - name: AWS_SECRET_ACCESS_KEY
+        secretKey: aws-secret-access-key
+      - name: DB_CONNECTION_STRING
+        secretKey: postgres-connection-string
     
     # Resource configuration
     resources:
@@ -283,6 +291,24 @@ externalSecrets:
       description: "AWS SES SMTP password"
       remoteRef:
         key: aws-ses-smtp-password
+    - secretKey: aws-access-key-id
+      description: "AWS access key ID"
+      remoteRef:
+        key: aws-access-key-id
+    - secretKey: aws-secret-access-key
+      description: "AWS secret access key"
+      remoteRef:
+        key: aws-secret-access-key
+    - secretKey: postgres-connection-string
+      description: "PostgreSQL database connection string"
+      remoteRef:
+        key: postgres-connection-string
+    
+    # Database secrets
+    - secretKey: postgres-connection-string
+      description: "PostgreSQL database connection string"
+      remoteRef:
+        key: postgres-connection-string
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
@@ -301,6 +327,49 @@ affinity:
                 values:
                   - tranzrmoves
           topologyKey: kubernetes.io/hostname
+
+# Jobs configuration
+jobs:
+  dbMigration:
+    enabled: true
+    backoffLimit: 3
+    image:
+      repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
+      pullPolicy: IfNotPresent
+      tag: "0.5.1"  # Should match the backend service version
+    
+
+    
+    # Init container resources
+    initContainer:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    
+    # Main container resources
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    
+    # Regular environment variables (plain values)
+    env:
+      - name: ASPNETCORE_ENVIRONMENT
+        value: "Production"
+      - name: LOG_LEVEL
+        value: "Information"
+    
+    # Environment variables from External Secrets
+    envFromSecrets:
+      - name: DB_CONNECTION_STRING
+        secretKey: postgres-connection-string
 
 # Additional volumes and volume mounts
 volumes: []
