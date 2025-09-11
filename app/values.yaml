@@ -317,10 +317,10 @@ externalSecrets:
         key: tranzr-azure-storage-connection-string
     
     # Database secrets
-    - secretKey: tranzr-azure-storage-connection-string
+    - secretKey: tranzr-postgres-connection-string
       description: "PostgreSQL database connection string"
       remoteRef:
-        key: tranzr-azure-storage-connection-string
+        key: tranzr-postgres-connection-string
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
@@ -384,7 +384,7 @@ jobs:
     # Environment variables from External Secrets
     envFromSecrets:
       - name: DB_CONNECTION_STRING
-        secretKey: postgres-connection-string
+        secretKey: tranzr-postgres-connection-string
       - name: TRANZR_SUPABASE_PROJECT_ID
         secretKey: tranzr-supabase-project-id
 
