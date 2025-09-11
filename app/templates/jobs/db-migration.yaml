@@ -62,7 +62,7 @@ spec:
               echo "PostgreSQL is ready!"
           env:
             - name: POSTGRESQL_PORT
-              value: {{ .Values.jobs.dbMigration.database.port | default 5432 }}
+              value: "{{ .Values.jobs.dbMigration.database.port | default 5432 }}"
             {{- range .Values.jobs.dbMigration.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
