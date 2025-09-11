@@ -18,7 +18,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.16.1"
+      tag: "0.17.0"
     
     # Container port configuration
     containerPort: 8080
@@ -78,7 +78,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.5.1"
+      tag: "0.10.0"
     
     # Container port configuration
     containerPort: 8080
@@ -101,6 +101,10 @@ deployments:
         value: "Tranzr Moves"
       - name: AWS_DEFAULT_REGION
         value: "eu-west-2"
+      - name: AWS_REGION
+        value: "eu-west-2"
+      - name: MAPBOX_BASE_URL
+        value: "https://api.mapbox.com"
     
     # Environment variables from External Secrets
     envFromSecrets:
@@ -126,8 +130,12 @@ deployments:
         secretKey: aws-access-key-id
       - name: AWS_SECRET_ACCESS_KEY
         secretKey: aws-secret-access-key
-      - name: DB_CONNECTION_STRING
-        secretKey: postgres-connection-string
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-azure-storage-connection-string
+      - name: MAPBOX_TOKEN
+        secretKey: mapbox-token
+      - name: AZURE_STORAGE_CONNECTION_STRING
+        secretKey: tranzr-azure-storage-connection-string
     
     # Resource configuration
     resources:
@@ -299,16 +307,20 @@ externalSecrets:
       description: "AWS secret access key"
       remoteRef:
         key: aws-secret-access-key
-    - secretKey: postgres-connection-string
-      description: "PostgreSQL database connection string"
+    - secretKey: mapbox-token
+      description: "Mapbox token"
       remoteRef:
-        key: postgres-connection-string
+        key: mapbox-token
+    - secretKey: tranzr-azure-storage-connection-string
+      description: "Azure storage connection string"
+      remoteRef:
+        key: tranzr-azure-storage-connection-string
     
     # Database secrets
-    - secretKey: postgres-connection-string
+    - secretKey: tranzr-azure-storage-connection-string
       description: "PostgreSQL database connection string"
       remoteRef:
-        key: postgres-connection-string
+        key: tranzr-azure-storage-connection-string
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
@@ -336,7 +348,10 @@ jobs:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
       pullPolicy: IfNotPresent
-      tag: "0.5.1"  # Should match the backend service version
+      tag: "0.10.0"  # Should match the backend service version
+    restartPolicy: Never
+    database:
+      port: 5432
     
 
     
@@ -370,6 +385,8 @@ jobs:
     envFromSecrets:
       - name: DB_CONNECTION_STRING
         secretKey: postgres-connection-string
+      - name: TRANZR_SUPABASE_PROJECT_ID
+        secretKey: tranzr-supabase-project-id
 
 # Additional volumes and volume mounts
 volumes: []
