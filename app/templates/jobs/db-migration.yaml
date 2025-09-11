@@ -25,7 +25,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
-      restartPolicy: Never
+      restartPolicy: {{ .Values.jobs.dbMigration.restartPolicy }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -94,7 +94,6 @@ spec:
                   key: {{ .secretKey }}
             {{- end }}
           {{- end }}
-          restartPolicy: {{ .Values.jobs.dbMigration.restartPolicy }}
           
           resources:
             {{- toYaml .Values.jobs.dbMigration.resources | nindent 12 }}
