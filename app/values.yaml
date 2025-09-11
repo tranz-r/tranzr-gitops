@@ -322,6 +322,11 @@ externalSecrets:
       remoteRef:
         key: tranzr-postgres-connection-string
 
+    - secretKey: tranzr-supabase-project-id
+      description: "Supabase project ID"
+      remoteRef:
+        key: tranzr-supabase-project-id
+
 # Node selector, tolerations, and affinity
 nodeSelector: {}
 
