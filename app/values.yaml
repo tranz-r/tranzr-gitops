@@ -131,7 +131,7 @@ deployments:
       - name: AWS_SECRET_ACCESS_KEY
         secretKey: aws-secret-access-key
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
-        secretKey: tranzr-postgres-connection-string
+        secretKey: tranzr-supabase-database-connection-string
       - name: MAPBOX_TOKEN
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
@@ -317,15 +317,14 @@ externalSecrets:
         key: tranzr-azure-storage-connection-string
     
     # Database secrets
-    - secretKey: tranzr-postgres-connection-string
+    - secretKey: tranzr-supabase-database-connection-string
       description: "PostgreSQL database connection string"
       remoteRef:
-        key: tranzr-postgres-connection-string
-
-    - secretKey: tranzr-supabase-project-id
-      description: "Supabase project ID"
+        key: tranzr-supabase-database-connection-string
+    - secretKey: tranzr-supabase-database-host
+      description: "PostgreSQL database host"
       remoteRef:
-        key: tranzr-supabase-project-id
+        key: tranzr-supabase-database-host
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
@@ -385,13 +384,15 @@ jobs:
         value: "Production"
       - name: LOG_LEVEL
         value: "Information"
+      - name: TRANZR_SUPABASE_DATABASE_PORT
+        value: "5432"
     
     # Environment variables from External Secrets
     envFromSecrets:
       - name: DB_CONNECTION_STRING
-        secretKey: tranzr-postgres-connection-string
-      - name: TRANZR_SUPABASE_PROJECT_ID
-        secretKey: tranzr-supabase-project-id
+        secretKey: tranzr-supabase-database-connection-string
+      - name: TRANZR_SUPABASE_DATABASE_HOST
+        secretKey: tranzr-supabase-database-host
 
 # Additional volumes and volume mounts
 volumes: []

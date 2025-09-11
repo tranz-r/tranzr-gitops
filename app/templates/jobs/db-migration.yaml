@@ -51,17 +51,20 @@ spec:
             - -c
             - |
               echo "Constructing PostgreSQL hostname..."
-              export POSTGRESQL_HOST="db.$$TRANZR_SUPABASE_PROJECT_ID.supabase.co"
-              echo "Using host: $$POSTGRESQL_HOST"
+              export POSTGRESQL_HOST=$TRANZR_SUPABASE_DATABASE_HOST
+              export POSTGRESQL_PORT=$TRANZR_SUPABASE_DATABASE_PORT
+              echo "Using host: $POSTGRESQL_HOST"
               echo "Checking PostgreSQL connectivity..."
-              until pg_isready -h $$POSTGRESQL_HOST -p $$POSTGRESQL_PORT; do
+              until pg_isready -h $POSTGRESQL_HOST -p $POSTGRESQL_PORT; do
                 echo "PostgreSQL is not ready yet. Waiting..."
                 sleep 2
               done
               echo "PostgreSQL is ready!"
           env:
-            - name: POSTGRESQL_PORT
-              value: "{{ .Values.jobs.dbMigration.database.port | default 5432 }}"
+            {{- range .Values.jobs.dbMigration.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
             {{- range .Values.jobs.dbMigration.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
