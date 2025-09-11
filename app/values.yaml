@@ -131,7 +131,7 @@ deployments:
       - name: AWS_SECRET_ACCESS_KEY
         secretKey: aws-secret-access-key
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
-        secretKey: tranzr-azure-storage-connection-string
+        secretKey: tranzr-postgres-connection-string
       - name: MAPBOX_TOKEN
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
