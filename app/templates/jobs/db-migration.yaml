@@ -7,9 +7,7 @@ metadata:
     {{- include "tranzrmoves.labels" . | nindent 4 }}
     app.kubernetes.io/component: db-migration
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-failed
+    helm.sh/hook: pre-install,pre-upgrade
 spec:
   backoffLimit: {{ .Values.jobs.dbMigration.backoffLimit | default 3 }}
   template:
@@ -20,6 +18,7 @@ spec:
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
     spec:
+      ttlSecondsAfterFinished: 3600
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
