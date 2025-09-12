@@ -18,7 +18,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.17.3"
+      tag: "0.17.5"
     
     # Container port configuration
     containerPort: 8080
@@ -216,12 +216,12 @@ ingress:
   enabled: true
   className: "nginx"
   annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-production"
+    cert-manager.io/cluster-issuer: "tranzr-letsencrypt-production"
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
   hosts:
-    - host: tranzr-gw.labgrid.net
+    - host: api.tranzrmoves.com
       paths:
         - path: /
           pathType: Prefix
@@ -230,7 +230,7 @@ ingress:
   tls:
     - secretName: tranzr-gateway-tls
       hosts:
-        - tranzr-gw.labgrid.net
+        - api.tranzrmoves.com
 
 # Consolidated External Secrets configuration
 externalSecrets:
