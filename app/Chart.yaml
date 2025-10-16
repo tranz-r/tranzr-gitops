@@ -23,6 +23,11 @@ version: 0.1.26
 # It is recommended to use it with quotes.
 appVersion: "0.6.1"
 
+dependencies:
+  - name: chatwoot
+    version: 2.0.7
+    repository: "https://chatwoot.github.io/charts"
+
 # Additional metadata
 keywords:
   - microservices

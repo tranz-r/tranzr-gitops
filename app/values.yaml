@@ -105,6 +105,10 @@ deployments:
         value: "eu-west-2"
       - name: MAPBOX_BASE_URL
         value: "https://api.mapbox.com"
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzrmoves.com/checkout/cancel"
     
     # Environment variables from External Secrets
     envFromSecrets:
@@ -136,6 +140,8 @@ deployments:
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
         secretKey: tranzr-azure-storage-connection-string
+      - name: COMMUNICATION_SERVICES_CONNECTION_STRING
+        secretKey: tranzr-communication-services-connection-string
     
     # Resource configuration
     resources:
@@ -227,10 +233,10 @@ ingress:
           pathType: Prefix
           serviceName: tranzr-gateway
           servicePort: 80
-  tls:
-    - secretName: tranzr-gateway-tls
-      hosts:
-        - api.tranzrmoves.com
+  tls: []
+    # - secretName: tranzr-gateway-tls
+    #   hosts:
+    #     - api.tranzrmoves.com
 
 # Consolidated External Secrets configuration
 externalSecrets:
@@ -315,6 +321,10 @@ externalSecrets:
       description: "Azure storage connection string"
       remoteRef:
         key: tranzr-azure-storage-connection-string
+    - secretKey: tranzr-communication-services-connection-string
+      description: "Communication services connection string"
+      remoteRef:
+        key: tranzr-communication-services-connection-string
     
     # Database secrets
     - secretKey: tranzr-supabase-database-connection-string
@@ -397,3 +407,201 @@ jobs:
 # Additional volumes and volume mounts
 volumes: []
 volumeMounts: []
+
+
+chatwoot:
+  # Disable bundled Postgres & Redis; we’ll use external ones
+  postgresql:
+    enabled: false
+  redis:
+    enabled: false
+
+  # Reference to existing Kubernetes Secret that holds all environment variables.
+  # This Secret should contain keys like:
+  #   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
+  #   REDIS_HOST, REDIS_PASSWORD, SECRET_KEY_BASE, SMTP_ADDRESS, SMTP_USERNAME, SMTP_PASSWORD
+  existingEnvSecret: chatwoot-env-secrets
+
+  # Non-sensitive environment configuration
+  env:
+    RAILS_ENV: production
+    INSTALLATION_ENV: helm
+    ACTIVE_STORAGE_SERVICE: microsoft        # https://developers.chatwoot.com/self-hosted/deployment/storage/supported-providers
+    ENABLE_ACCOUNT_SIGNUP: "false"       # disable public signup
+    FORCE_SSL: "true"
+    FRONTEND_URL: "https://chat.tranzrmoves.com"
+    RAILS_LOG_TO_STDOUT: "true"
+    RAILS_MAX_THREADS: "5"
+    USE_INBOX_AVATAR_FOR_BOT: "true"
+    REDIS_URL: "redis://redis-master.redis-system.svc.cluster.local:6379"
+    MAILER_SENDER_EMAIL: "tranzrchat@tranzrmoves.com"
+    SMTP_PORT: "587"
+    SMTP_TLS: "Enabled"
+    SMTP_SSL: "Enabled"
+    POSTGRES_PORT: "5432"
+    POSTGRES_DATABASE: "chatwoot_production"
+    SMTP_ADDRESS: "smtp.azurecomm.net"
+    AZURE_STORAGE_CONTAINER: "chatwoot"
+    AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
+
+  # Web application deployment configuration
+  web:
+    replicaCount: 2
+    hpa:
+      enabled: true
+      cputhreshold: 80
+      minpods: 1
+      maxpods: 3
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+  # Background worker deployment configuration
+  worker:
+    replicaCount: 2
+    hpa:
+      enabled: true
+      cputhreshold: 80
+      minpods: 2
+      maxpods: 5
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1
+        memory: 1Gi
+
+  # Internal service configuration (ClusterIP)
+  services:
+    name: chatwoot
+    type: ClusterIP
+    internalPort: 3000
+    targetPort: 3000
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  # Ingress configuration (adjust to your ingress controller)
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+      cert-manager.io/cluster-issuer: "tranzr-letsencrypt-production"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    hosts:
+      - host: chat.tranzrmoves.com
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chatwoot
+                port:
+                  number: 3000
+    tls: []
+
+  # Database migration job
+  hooks:
+    migrate:
+      env: []
+      hookAnnotation: "post-install,post-upgrade"
+      resources:
+        requests:
+          memory: 1000Mi
+        limits:
+          memory: 1000Mi
+
+  # Optional scheduling and security context
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  podSecurityContext: {}
+  securityContext: {}
+
+
+  # --- External Secrets configuration ---
+  externalSecrets:
+    enabled: true
+    name: chatwoot-env-secrets
+    refreshInterval: "1h"
+    secretStoreRef:
+      name: azure-kv-cluster-store
+      kind: ClusterSecretStore
+    
+    # Chatwoot secrets - add your chatwoot-specific secrets here
+    secrets:
+      - secretKey: POSTGRES_HOST
+        description: "Chatwoot Postgres host"
+        remoteRef:
+          key: chatwoot-postgres-host
+      # - secretKey: POSTGRES_PORT
+      #   description: "Chatwoot Postgres port"
+      #   remoteRef:
+      #     key: chatwoot-postgres-port
+      - secretKey: POSTGRES_USERNAME
+        description: "Chatwoot Postgres username"
+        remoteRef:
+          key: chatwoot-postgres-username
+      - secretKey: POSTGRES_PASSWORD
+        description: "Chatwoot Postgres password"
+        remoteRef:
+          key: chatwoot-postgres-password
+      # - secretKey: POSTGRES_DATABASE
+      #   description: "Chatwoot Postgres database"
+      #   remoteRef:
+      #     key: chatwoot-postgres-database
+      - secretKey: SECRET_KEY_BASE
+        description: "Chatwoot secret key base"
+        remoteRef:
+          key: chatwoot-secret-key-base
+
+      # Redis secrets
+      # - secretKey: REDIS_HOST
+      #   description: "Chatwoot Redis host"
+      #   remoteRef:
+      #     key: chatwoot-redis-host
+      # - secretKey: REDIS_PORT
+      #   description: "Chatwoot Redis port"
+      #   remoteRef:
+      #     key: chatwoot-redis-port
+      - secretKey: REDIS_PASSWORD
+        description: "Chatwoot Redis password"
+        remoteRef:
+          key: redis-password
+
+      # SMTP secrets
+      # - secretKey: SMTP_ADDRESS
+      #   description: "Chatwoot SMTP address"
+      #   remoteRef:
+      #     key: chatwoot-smtp-address
+      - secretKey: SMTP_USERNAME
+        description: "Chatwoot SMTP username"
+        remoteRef:
+          key: acs-smtp-username
+      - secretKey: SMTP_PASSWORD
+        description: "Chatwoot SMTP password"
+        remoteRef:
+          key: acs-smtp-password
+
+      # Azure Blob Storage secrets
+      # - secretKey: AZURE_STORAGE_ACCOUNT_NAME
+      #   description: "Azure Blob Storage account name"
+      #   remoteRef:
+      #     key: azure-storage-account-name
+      - secretKey: AZURE_STORAGE_ACCESS_KEY
+        description: "Azure Blob Storage access key"
+        remoteRef:
+          key: chatwoot-azure-storage-access-key
+      # - secretKey: AZURE_STORAGE_CONTAINER
+      #   description: "Azure Blob Storage container name"
+      #   remoteRef:
+      #     key: azure-storage-container
