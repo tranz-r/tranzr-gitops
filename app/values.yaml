@@ -410,11 +410,13 @@ volumeMounts: []
 
 
 chatwoot:
-  # Disable bundled Postgres & Redis; we’ll use external ones
+  # Disable bundled Postgres & Redis; we'll use external ones
   postgresql:
     enabled: false
   redis:
     enabled: false
+    host: redis-master.redis-system.svc.cluster.local
+    port: 6379
 
   # Reference to existing Kubernetes Secret that holds all environment variables.
   # This Secret should contain keys like:
@@ -433,7 +435,6 @@ chatwoot:
     RAILS_LOG_TO_STDOUT: "true"
     RAILS_MAX_THREADS: "5"
     USE_INBOX_AVATAR_FOR_BOT: "true"
-    REDIS_URL: "redis://redis-master.redis-system.svc.cluster.local:6379"
     MAILER_SENDER_EMAIL: "tranzrchat@tranzrmoves.com"
     SMTP_PORT: "587"
     SMTP_TLS: "Enabled"
