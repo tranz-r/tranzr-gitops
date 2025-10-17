@@ -439,7 +439,7 @@ chatwoot:
     SMTP_TLS: "Enabled"
     SMTP_SSL: "Enabled"
     POSTGRES_PORT: "5432"
-    POSTGRES_DATABASE: "chatwoot_production"
+    POSTGRES_DATABASE: "postgres"
     SMTP_ADDRESS: "smtp.azurecomm.net"
     AZURE_STORAGE_CONTAINER: "chatwoot"
     AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
