@@ -539,22 +539,26 @@ chatwoot:
     
     # Chatwoot secrets - add your chatwoot-specific secrets here
     secrets:
-      - secretKey: POSTGRES_HOST
-        description: "Chatwoot Postgres host"
+      - secretKey: DATABASE_URL
+        description: "Chatwoot database URL"
         remoteRef:
-          key: chatwoot-postgres-host
+          key: chatwoot-postgres-database-url
+      # - secretKey: POSTGRES_HOST
+      #   description: "Chatwoot Postgres host"
+      #   remoteRef:
+      #     key: chatwoot-postgres-host
       # - secretKey: POSTGRES_PORT
       #   description: "Chatwoot Postgres port"
       #   remoteRef:
       #     key: chatwoot-postgres-port
-      - secretKey: POSTGRES_USERNAME
-        description: "Chatwoot Postgres username"
-        remoteRef:
-          key: chatwoot-postgres-username
-      - secretKey: POSTGRES_PASSWORD
-        description: "Chatwoot Postgres password"
-        remoteRef:
-          key: chatwoot-postgres-password
+      # - secretKey: POSTGRES_USERNAME
+      #   description: "Chatwoot Postgres username"
+      #   remoteRef:
+      #     key: chatwoot-postgres-username
+      # - secretKey: POSTGRES_PASSWORD
+      #   description: "Chatwoot Postgres password"
+      #   remoteRef:
+      #     key: chatwoot-postgres-password
       # - secretKey: POSTGRES_DATABASE
       #   description: "Chatwoot Postgres database"
       #   remoteRef:
