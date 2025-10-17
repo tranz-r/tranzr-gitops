@@ -449,9 +449,9 @@ chatwoot:
 
   # Web application deployment configuration
   web:
-    replicaCount: 2
+    replicaCount: 1
     hpa:
-      enabled: true
+      enabled: false
       cputhreshold: 80
       minpods: 1
       maxpods: 3
@@ -465,9 +465,9 @@ chatwoot:
 
   # Background worker deployment configuration
   worker:
-    replicaCount: 2
+    replicaCount: 1
     hpa:
-      enabled: true
+      enabled: false
       cputhreshold: 80
       minpods: 2
       maxpods: 5
