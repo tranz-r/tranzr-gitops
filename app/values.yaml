@@ -507,7 +507,7 @@ chatwoot:
             pathType: Prefix
             backend:
               service:
-                name: chatwoot
+                name: tranzr-moves-chatwoot
                 port:
                   number: 3000
     tls: []
