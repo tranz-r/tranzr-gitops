@@ -413,6 +413,8 @@ chatwoot:
   # Disable bundled Postgres & Redis; we'll use external ones
   postgresql:
     enabled: false
+    postgresqlHost: aws-1-eu-west-2.pooler.supabase.com
+    postgresqlPort: 5432
   redis:
     enabled: false
     host: redis-master.redis-system.svc.cluster.local
