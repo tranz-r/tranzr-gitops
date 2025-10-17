@@ -436,6 +436,7 @@ chatwoot:
     RAILS_MAX_THREADS: "5"
     USE_INBOX_AVATAR_FOR_BOT: "true"
     MAILER_SENDER_EMAIL: "tranzrchat@tranzrmoves.com"
+    POSTGRES_HOST: "aws-1-eu-west-2.pooler.supabase.com"
     SMTP_PORT: "587"
     SMTP_TLS: "Enabled"
     SMTP_SSL: "Enabled"
