@@ -438,12 +438,21 @@ chatwoot:
     RAILS_MAX_THREADS: "5"
     USE_INBOX_AVATAR_FOR_BOT: "true"
     MAILER_SENDER_EMAIL: "tranzrchat@tranzrmoves.com"
+    
+    # SMTP Configuration - Fixed values
+    SMTP_ADDRESS: "smtp.azurecomm.net"
     SMTP_PORT: "587"
-    SMTP_TLS: "Enabled"
-    SMTP_SSL: "Enabled"
+    SMTP_DOMAIN: "tranzrmoves.com"
+    SMTP_AUTHENTICATION: "plain"
+    SMTP_ENABLE_STARTTLS_AUTO: "true"
+    SMTP_OPENSSL_VERIFY_MODE: "none"
+    # Note: Removed SMTP_SSL and SMTP_TLS to avoid conflicts with STARTTLS on port 587
+    
+    # Database Configuration
     POSTGRES_PORT: "5432"
     POSTGRES_DATABASE: "postgres"
-    SMTP_ADDRESS: "smtp.azurecomm.net"
+    
+    # Azure Storage Configuration
     AZURE_STORAGE_CONTAINER: "chatwoot"
     AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
 
