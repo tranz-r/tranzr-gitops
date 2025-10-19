@@ -27,7 +27,11 @@ dependencies:
   - name: chatwoot
     version: 2.0.7
     repository: "https://chatwoot.github.io/charts"
-
+  - name: cluster
+    alias: pgcluster
+    enabled: true
+    version: 0.3.1
+    repository: https://cloudnative-pg.github.io/charts
 # Additional metadata
 keywords:
   - microservices

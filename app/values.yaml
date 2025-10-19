@@ -413,8 +413,8 @@ chatwoot:
   # Disable bundled Postgres & Redis; we'll use external ones
   postgresql:
     enabled: false
-    postgresqlHost: aws-1-eu-west-2.pooler.supabase.com
-    postgresqlPort: 6543
+    postgresqlHost: tranzr-moves-pgcluster-rw.svc.cluster.local
+    postgresqlPort: 5432
   redis:
     enabled: false
     host: redis-master.redis-system.svc.cluster.local
@@ -424,7 +424,7 @@ chatwoot:
   # This Secret should contain keys like:
   #   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
   #   REDIS_HOST, REDIS_PASSWORD, SECRET_KEY_BASE, SMTP_ADDRESS, SMTP_USERNAME, SMTP_PASSWORD
-  existingEnvSecret: chatwoot-env-secrets
+  existingEnvSecret: chatwoot-unified-env
 
   # Non-sensitive environment configuration
   env:
@@ -555,54 +555,20 @@ chatwoot:
     
     # Chatwoot secrets - add your chatwoot-specific secrets here
     secrets:
-      - secretKey: DATABASE_URL
-        description: "Chatwoot database URL"
-        remoteRef:
-          key: chatwoot-postgres-database-url
-      # - secretKey: POSTGRES_HOST
-      #   description: "Chatwoot Postgres host"
+      # - secretKey: DATABASE_URL
+      #   description: "Chatwoot database URL"
       #   remoteRef:
-      #     key: chatwoot-postgres-host
-      # - secretKey: POSTGRES_PORT
-      #   description: "Chatwoot Postgres port"
-      #   remoteRef:
-      #     key: chatwoot-postgres-port
-      # - secretKey: POSTGRES_USERNAME
-      #   description: "Chatwoot Postgres username"
-      #   remoteRef:
-      #     key: chatwoot-postgres-username
-      # - secretKey: POSTGRES_PASSWORD
-      #   description: "Chatwoot Postgres password"
-      #   remoteRef:
-      #     key: chatwoot-postgres-password
-      # - secretKey: POSTGRES_DATABASE
-      #   description: "Chatwoot Postgres database"
-      #   remoteRef:
-      #     key: chatwoot-postgres-database
+      #     key: chatwoot-postgres-database-url
       - secretKey: SECRET_KEY_BASE
         description: "Chatwoot secret key base"
         remoteRef:
           key: chatwoot-secret-key-base
-
-      # Redis secrets
-      # - secretKey: REDIS_HOST
-      #   description: "Chatwoot Redis host"
-      #   remoteRef:
-      #     key: chatwoot-redis-host
-      # - secretKey: REDIS_PORT
-      #   description: "Chatwoot Redis port"
-      #   remoteRef:
-      #     key: chatwoot-redis-port
       - secretKey: REDIS_PASSWORD
         description: "Chatwoot Redis password"
         remoteRef:
           key: redis-password
 
       # SMTP secrets
-      # - secretKey: SMTP_ADDRESS
-      #   description: "Chatwoot SMTP address"
-      #   remoteRef:
-      #     key: chatwoot-smtp-address
       - secretKey: SMTP_USERNAME
         description: "Chatwoot SMTP username"
         remoteRef:
@@ -613,15 +579,141 @@ chatwoot:
           key: acs-smtp-password
 
       # Azure Blob Storage secrets
-      # - secretKey: AZURE_STORAGE_ACCOUNT_NAME
-      #   description: "Azure Blob Storage account name"
-      #   remoteRef:
-      #     key: azure-storage-account-name
       - secretKey: AZURE_STORAGE_ACCESS_KEY
         description: "Azure Blob Storage access key"
         remoteRef:
           key: chatwoot-azure-storage-access-key
-      # - secretKey: AZURE_STORAGE_CONTAINER
-      #   description: "Azure Blob Storage container name"
-      #   remoteRef:
-      #     key: azure-storage-container
+
+  unifiedExternalSecret:
+    enabled: true
+
+    # Name of the ExternalSecret resource
+    name: chatwoot-unified-env
+
+    # Name of the resulting target Kubernetes Secret (what Chatwoot will consume)
+    targetName: chatwoot-unified-env
+
+    # Frequency of reconciliation
+    refreshInterval: 1h
+
+    # CNPG cluster secret to extract database URI from
+    cnpgSecretName: tranzr-moves-pgcluster-app
+    cnpgUriKey: uri   # key inside CNPG secret containing connection string
+
+    # Existing Azure KV-based secret name
+    azureSecretName: chatwoot-env-secrets
+
+    # Optional additional template mappings (key-value)
+    extraTemplateKeys:
+      AZURE_STORAGE_ACCESS_KEY: "{{ .AZURE_STORAGE_ACCESS_KEY }}"
+      REDIS_PASSWORD: "{{ .REDIS_PASSWORD }}"
+      SECRET_KEY_BASE: "{{ .SECRET_KEY_BASE }}"
+      SMTP_USERNAME: "{{ .SMTP_USERNAME }}"
+      SMTP_PASSWORD: "{{ .SMTP_PASSWORD }}"
+
+pgcluster:
+  enabled: true
+  type: postgresql
+
+  version:
+    # -- PostgreSQL major version to use
+    postgresql: "18"
+
+  mode: standalone
+
+  cluster:
+    instances: 2
+    imageName: "ghcr.io/cloudnative-pg/postgresql:18.0"
+    imagePullPolicy: IfNotPresent
+
+    storage:
+      size: 10Gi
+      storageClass: "synology-iscsi-delete"
+
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: 500m
+      limits:
+        memory: "1Gi"
+        cpu: 1000m
+
+    priorityClassName: ""
+    primaryUpdateMethod: switchover
+    primaryUpdateStrategy: unsupervised
+    logLevel: "info"
+
+    affinity:
+      enablePodAntiAffinity: true
+      topologyKey: topology.kubernetes.io/zone
+
+    enableSuperuserAccess: true
+
+    enablePDB: true
+
+    initdb:
+      database: "tranzrmoves-chatwoot"
+      owner: "tranzrmoves"
+
+
+  backups:
+    enabled: true
+    # Azure: https://<storageAccount>.<serviceName>.core.windows.net/<containerName><path>
+    destinationPath: "https://tranzrmovessa.blob.core.windows.net/chatwoot-pg-backup"
+    # -- One of `s3`, `azure` or `google`
+    provider: azure
+    azure:
+      path: "/"
+      connectionString: ""
+      storageAccount: ""
+      storageKey: ""
+      storageSasToken: ""
+      containerName: ""
+      serviceName: blob
+      inheritFromAzureAD: false
+    secret:
+      create: false
+      name: "azure-credential"
+
+    wal:
+      # -- WAL compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt WAL files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: AES256
+      # -- Number of WAL files to be archived or restored in parallel.
+      maxParallel: 1
+    data:
+      # -- Data compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt data files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: AES256
+      # -- Number of data files to be archived or restored in parallel.
+      jobs: 2
+
+    scheduledBackups:
+      -
+        # -- Scheduled backup name
+        name: scheduled-backup
+        # -- Schedule in cron format
+        schedule: "0 0 0 * * 1,3,5"
+        # -- Backup owner reference
+        backupOwnerReference: self
+        # -- Backup method, can be `barmanObjectStore` (default) or `volumeSnapshot`
+        method: barmanObjectStore
+
+    # -- Retention policy for backups
+    retentionPolicy: "7d"
+
+  externalSecretBackupCredentials:
+    name: azure-credential
+    refreshInterval: "1h"
+    secretStoreRef:
+      name: azure-kv-cluster-store
+      kind: ClusterSecretStore
+    data:
+      - secretKey: AZURE_STORAGE_ACCOUNT
+        remoteRef:
+          key: tranzrmoves-storage-account-name
+      - secretKey: AZURE_STORAGE_SAS_TOKEN
+        remoteRef:
+          key: chatwoot-postgres-backup-sas-token
