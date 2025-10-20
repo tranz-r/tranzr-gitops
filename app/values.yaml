@@ -603,6 +603,8 @@ chatwoot:
     # Existing Azure KV-based secret name
     azureSecretName: chatwoot-env-secrets
 
+    existingSecretStore: chatwoot-k8s-secretstore
+
     # Optional additional template mappings (key-value)
     extraTemplateKeys:
       AZURE_STORAGE_ACCESS_KEY: "{{ .AZURE_STORAGE_ACCESS_KEY }}"
@@ -610,6 +612,11 @@ chatwoot:
       SECRET_KEY_BASE: "{{ .SECRET_KEY_BASE }}"
       SMTP_USERNAME: "{{ .SMTP_USERNAME }}"
       SMTP_PASSWORD: "{{ .SMTP_PASSWORD }}"
+
+  secretStore:
+    enabled: true
+    name: chatwoot-k8s-secretstore
+
 
 pgcluster:
   enabled: true
