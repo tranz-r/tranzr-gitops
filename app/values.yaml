@@ -607,11 +607,11 @@ chatwoot:
 
     # Optional additional template mappings (key-value)
     extraTemplateKeys:
-      AZURE_STORAGE_ACCESS_KEY: "{{ .AZURE_STORAGE_ACCESS_KEY }}"
-      REDIS_PASSWORD: "{{ .REDIS_PASSWORD }}"
-      SECRET_KEY_BASE: "{{ .SECRET_KEY_BASE }}"
-      SMTP_USERNAME: "{{ .SMTP_USERNAME }}"
-      SMTP_PASSWORD: "{{ .SMTP_PASSWORD }}"
+      AZURE_STORAGE_ACCESS_KEY: "AZURE_STORAGE_ACCESS_KEY"
+      REDIS_PASSWORD: "REDIS_PASSWORD"
+      SECRET_KEY_BASE: "SECRET_KEY_BASE"
+      SMTP_USERNAME: "SMTP_USERNAME"
+      SMTP_PASSWORD: "SMTP_PASSWORD"
 
   secretStore:
     enabled: true
