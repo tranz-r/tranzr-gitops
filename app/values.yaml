@@ -449,8 +449,9 @@ chatwoot:
     # Note: Removed SMTP_SSL and SMTP_TLS to avoid conflicts with STARTTLS on port 587
     
     # Database Configuration
+    POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
     POSTGRES_PORT: "5432"
-    POSTGRES_DATABASE: "postgres"
+    POSTGRES_DATABASE: "tranzrmoves-chatwoot"
     
     # Azure Storage Configuration
     AZURE_STORAGE_CONTAINER: "chatwoot"
@@ -597,8 +598,10 @@ chatwoot:
     refreshInterval: 1h
 
     # CNPG cluster secret to extract database URI from
-    cnpgSecretName: tranzr-moves-pgcluster-app
+    cnpgSecretName: tranzr-moves-pgcluster-superuser # superuser secret
     cnpgUriKey: uri   # key inside CNPG secret containing connection string
+    postgresUsername: username
+    postgresPassword: password
 
     # Existing Azure KV-based secret name
     azureSecretName: chatwoot-env-secrets
