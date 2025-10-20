@@ -413,7 +413,7 @@ chatwoot:
   # Disable bundled Postgres & Redis; we'll use external ones
   postgresql:
     enabled: false
-    postgresqlHost: tranzr-moves-pgcluster-rw.svc.cluster.local
+    postgresqlHost: tranzr-moves-pgcluster-rw
     postgresqlPort: 5432
   redis:
     enabled: false
@@ -526,7 +526,7 @@ chatwoot:
     migrate:
       env:
         - name: POSTGRES_HOST
-          value: "tranzr-moves-pgcluster-rw.svc.cluster.local"
+          value: "tranzr-moves-pgcluster-rw"
         - name: POSTGRES_PORT
           value: "5432"
       hookAnnotation: "post-install,post-upgrade"
