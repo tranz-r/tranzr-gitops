@@ -526,7 +526,7 @@ chatwoot:
     migrate:
       env:
         - name: POSTGRES_HOST
-          value: "aws-1-eu-west-2.pooler.supabase.com"
+          value: "tranzr-moves-pgcluster-rw.svc.cluster.local"
         - name: POSTGRES_PORT
           value: "5432"
       hookAnnotation: "post-install,post-upgrade"
