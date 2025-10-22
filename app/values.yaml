@@ -711,6 +711,7 @@ pgcluster:
     retentionPolicy: "7d"
 
   externalSecretBackupCredentials:
+    enabled: true
     name: azure-credential
     refreshInterval: "1h"
     secretStoreRef:
