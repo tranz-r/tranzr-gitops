@@ -556,10 +556,6 @@ chatwoot:
     
     # Chatwoot secrets - add your chatwoot-specific secrets here
     secrets:
-      # - secretKey: DATABASE_URL
-      #   description: "Chatwoot database URL"
-      #   remoteRef:
-      #     key: chatwoot-postgres-database-url
       - secretKey: SECRET_KEY_BASE
         description: "Chatwoot secret key base"
         remoteRef:
