@@ -1,0 +1,74 @@
+{{- if .Values.jobs.internalApiCronjob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "tranzrmoves.fullname" . }}-internal-api-cronjob
+  labels:
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+    app.kubernetes.io/component: internal-api-cronjob
+spec:
+  schedule: {{ .Values.jobs.internalApiCronjob.schedule | quote }}
+  {{- with .Values.jobs.internalApiCronjob.concurrencyPolicy }}
+  concurrencyPolicy: {{ . }}
+  {{- end }}
+  {{- with .Values.jobs.internalApiCronjob.successfulJobsHistoryLimit }}
+  successfulJobsHistoryLimit: {{ . }}
+  {{- end }}
+  {{- with .Values.jobs.internalApiCronjob.failedJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ . }}
+  {{- end }}
+  {{- if .Values.jobs.internalApiCronjob.suspend }}
+  suspend: {{ .Values.jobs.internalApiCronjob.suspend }}
+  {{- end }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.internalApiCronjob.backoffLimit | default 3 }}
+      template:
+        metadata:
+          labels:
+            {{- include "tranzrmoves.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: internal-api-cronjob
+          annotations:
+            {{- toYaml .Values.podAnnotations | nindent 12 }}
+        spec:
+          ttlSecondsAfterFinished: 3600
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+          restartPolicy: {{ .Values.jobs.internalApiCronjob.restartPolicy }}
+          {{- with .Values.podSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: curl
+              image: {{ .Values.jobs.internalApiCronjob.image.repository }}:{{ .Values.jobs.internalApiCronjob.image.tag }}
+              imagePullPolicy: {{ .Values.jobs.internalApiCronjob.image.pullPolicy | default "IfNotPresent" }}
+              args:
+                {{- range .Values.jobs.internalApiCronjob.args }}
+                - {{ . | quote }}
+                {{- end }}
+              {{- if .Values.jobs.internalApiCronjob.resources }}
+              resources:
+                {{- toYaml .Values.jobs.internalApiCronjob.resources | nindent 16 }}
+              {{- end }}
+              {{- with .Values.securityContext }}
+              securityContext:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+{{- end }}
+
