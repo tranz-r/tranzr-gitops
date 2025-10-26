@@ -362,7 +362,7 @@ jobs:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
       pullPolicy: IfNotPresent
-      tag: "0.10.0"  # Should match the backend service version
+      tag: "0.17.0"  # Should match the backend service version
     restartPolicy: Never
     database:
       port: 5432
