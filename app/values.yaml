@@ -142,6 +142,8 @@ deployments:
         secretKey: tranzr-azure-storage-connection-string
       - name: COMMUNICATION_SERVICES_CONNECTION_STRING
         secretKey: tranzr-communication-services-connection-string
+      - name: TURNSTILE_SECRET_KEY
+        secretKey: cloudflare-turnstile-secret-key
     
     # Resource configuration
     resources:
@@ -325,6 +327,10 @@ externalSecrets:
       description: "Communication services connection string"
       remoteRef:
         key: tranzr-communication-services-connection-string
+    - secretKey: cloudflare-turnstile-secret-key
+      description: "Cloudflare turnstile secret key"
+      remoteRef:
+        key: cloudflare-turnstile-secret-key
     
     # Database secrets
     - secretKey: tranzr-supabase-database-connection-string
