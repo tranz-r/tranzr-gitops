@@ -35,6 +35,8 @@ deployments:
         value: "https://tranzrmoves.com"
       - name: Cors__AllowedOrigins__1
         value: "https://tranzrgroup.com"
+      - name: Cors__AllowedOrigins__2
+        value: "https://www.tranzrgroup.com"
     
     # Environment variables from External Secrets
     envFromSecrets:
