@@ -31,6 +31,8 @@ deployments:
         value: "8080"
       - name: NODE_ENV
         value: "production"
+      - name: Cors__AllowedOrigins
+        value: '["https://tranzrmoves.com", "https://tranzrgroup.com"]'
     
     # Environment variables from External Secrets
     envFromSecrets:
