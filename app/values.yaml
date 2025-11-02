@@ -476,6 +476,9 @@ chatwoot:
     RAILS_MAX_THREADS: "5"
     USE_INBOX_AVATAR_FOR_BOT: "true"
     MAILER_SENDER_EMAIL: "tranzrchat@tranzrmoves.com"
+
+    ENABLE_RACK_ATTACK: "false"
+    ENABLE_RACK_ATTACK_WIDGET_API: "false"
     
     # SMTP Configuration - Fixed values
     SMTP_ADDRESS: "smtp.azurecomm.net"
