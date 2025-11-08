@@ -500,6 +500,9 @@ chatwoot:
     AZURE_STORAGE_CONTAINER: "chatwoot"
     AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
 
+    BRAND_NAME: "Tranzr Moves"
+    INSTALLATION_NAME: "Tranzr Moves Chat"
+
   # Web application deployment configuration
   web:
     replicaCount: 1
