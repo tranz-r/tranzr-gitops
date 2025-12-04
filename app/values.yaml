@@ -19,10 +19,10 @@ deployments:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
       tag: "0.18.0"
-    
+
     # Container port configuration
     containerPort: 8080
-    
+
     # Regular environment variables (plain values)
     env:
       - name: LOG_LEVEL
@@ -39,14 +39,14 @@ deployments:
         value: "https://www.tranzrgroup.com"
       - name: Cors__AllowedOrigins__3
         value: "https://tranzrgroup.com"
-    
+
     # Environment variables from External Secrets
     envFromSecrets:
       - name: SUPER_BASE_JWT_SECRET_KEY
         secretKey: supabase-jwt-secret-key
       - name: SUPER_BASE_PROJECT_ID
         secretKey: supabase-project-id
-    
+
     # Resource configuration
     resources:
       requests:
@@ -55,7 +55,7 @@ deployments:
       limits:
         cpu: 1000m
         memory: 1Gi
-    
+
     # Probes configuration
     livenessProbe:
       httpGet:
@@ -63,14 +63,14 @@ deployments:
         port: http
       initialDelaySeconds: 30
       periodSeconds: 10
-    
+
     readinessProbe:
       httpGet:
         path: /ready
         port: http
       initialDelaySeconds: 15
       periodSeconds: 15
-    
+
     # Autoscaling configuration
     autoscaling:
       enabled: true
@@ -87,10 +87,10 @@ deployments:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
       tag: "0.17.0"
-    
+
     # Container port configuration
     containerPort: 8080
-    
+
     # Regular environment variables (plain values)
     env:
       - name: LOG_LEVEL
@@ -117,7 +117,7 @@ deployments:
         value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
       - name: CHECKOUT_SESSION_CANCEL_URL
         value: "https://tranzrmoves.com/checkout/cancel"
-    
+
     # Environment variables from External Secrets
     envFromSecrets:
       - name: STRIPE_API_KEY
@@ -152,7 +152,7 @@ deployments:
         secretKey: tranzr-communication-services-connection-string
       - name: TURNSTILE_SECRET_KEY
         secretKey: cloudflare-turnstile-secret-key
-    
+
     # Resource configuration
     resources:
       requests:
@@ -161,7 +161,7 @@ deployments:
       limits:
         cpu: 500m
         memory: 512Mi
-    
+
     # Probes configuration
     livenessProbe:
       httpGet:
@@ -169,14 +169,14 @@ deployments:
         port: http
       initialDelaySeconds: 30
       periodSeconds: 10
-    
+
     readinessProbe:
       httpGet:
         path: /ready
         port: http
       initialDelaySeconds: 5
       periodSeconds: 5
-    
+
     # Autoscaling configuration
     autoscaling:
       enabled: true
@@ -206,7 +206,7 @@ podSecurityContext:
 securityContext:
   capabilities:
     drop:
-    - ALL
+      - ALL
   readOnlyRootFilesystem: true
   runAsNonRoot: true
   runAsUser: 1000
@@ -219,7 +219,7 @@ services:
     port: 80
     targetPort: 8080
     protocol: TCP
-  
+
   backend:
     name: tranzr-service
     type: ClusterIP
@@ -243,7 +243,8 @@ ingress:
           pathType: Prefix
           serviceName: tranzr-gateway
           servicePort: 80
-  tls: []
+  tls:
+    []
     # - secretName: tranzr-gateway-tls
     #   hosts:
     #     - api.tranzrmoves.com
@@ -256,15 +257,15 @@ externalSecrets:
   secretStoreRef:
     name: azure-kv-cluster-store
     kind: ClusterSecretStore
-  
+
   # GitHub registry configuration
   githubRegistry:
     usernameKey: github-registry-username
     tokenKey: github-registry-token
-  
+
   # Create separate image pull secret (dockerconfigjson type)
   createImagePullSecret: true
-  
+
   # Application secrets - add all your application secrets here
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
@@ -277,7 +278,7 @@ externalSecrets:
       description: "Supabase project ID"
       remoteRef:
         key: supabase-project-id
-    
+
     # Backend secrets
     - secretKey: tranzr-stripe-api-key
       description: "Stripe API key for payment processing"
@@ -339,7 +340,7 @@ externalSecrets:
       description: "Cloudflare turnstile secret key"
       remoteRef:
         key: cloudflare-turnstile-secret-key
-    
+
     # Database secrets
     - secretKey: tranzr-supabase-database-connection-string
       description: "PostgreSQL database connection string"
@@ -376,13 +377,11 @@ jobs:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
       pullPolicy: IfNotPresent
-      tag: "0.17.0"  # Should match the backend service version
+      tag: "0.17.0" # Should match the backend service version
     restartPolicy: Never
     database:
       port: 5432
-    
 
-    
     # Init container resources
     initContainer:
       resources:
@@ -392,7 +391,7 @@ jobs:
         limits:
           cpu: 200m
           memory: 256Mi
-    
+
     # Main container resources
     resources:
       requests:
@@ -401,7 +400,7 @@ jobs:
       limits:
         cpu: 500m
         memory: 512Mi
-    
+
     # Regular environment variables (plain values)
     env:
       - name: ASPNETCORE_ENVIRONMENT
@@ -410,7 +409,7 @@ jobs:
         value: "Information"
       - name: TRANZR_SUPABASE_DATABASE_PORT
         value: "5432"
-    
+
     # Environment variables from External Secrets
     envFromSecrets:
       - name: DB_CONNECTION_STRING
@@ -420,7 +419,7 @@ jobs:
 
   internalApiCronjob:
     enabled: true
-    schedule: "*/10 * * * *"  # Every 10 minutes
+    schedule: "*/10 * * * *" # Every 10 minutes
     concurrencyPolicy: Allow
     successfulJobsHistoryLimit: 3
     failedJobsHistoryLimit: 3
@@ -448,7 +447,6 @@ jobs:
 volumes: []
 volumeMounts: []
 
-
 chatwoot:
   # Disable bundled Postgres & Redis; we'll use external ones
   postgresql:
@@ -470,8 +468,8 @@ chatwoot:
   env:
     RAILS_ENV: production
     INSTALLATION_ENV: helm
-    ACTIVE_STORAGE_SERVICE: microsoft        # https://developers.chatwoot.com/self-hosted/deployment/storage/supported-providers
-    ENABLE_ACCOUNT_SIGNUP: "false"       # disable public signup
+    ACTIVE_STORAGE_SERVICE: microsoft # https://developers.chatwoot.com/self-hosted/deployment/storage/supported-providers
+    ENABLE_ACCOUNT_SIGNUP: "false" # disable public signup
     FORCE_SSL: "true"
     FRONTEND_URL: "https://chat.tranzrmoves.com"
     RAILS_LOG_TO_STDOUT: "true"
@@ -481,7 +479,7 @@ chatwoot:
 
     ENABLE_RACK_ATTACK: "false"
     ENABLE_RACK_ATTACK_WIDGET_API: "false"
-    
+
     # SMTP Configuration - Fixed values
     SMTP_ADDRESS: "smtp.azurecomm.net"
     SMTP_PORT: "587"
@@ -490,12 +488,12 @@ chatwoot:
     SMTP_ENABLE_STARTTLS_AUTO: "true"
     SMTP_OPENSSL_VERIFY_MODE: "none"
     # Note: Removed SMTP_SSL and SMTP_TLS to avoid conflicts with STARTTLS on port 587
-    
+
     # Database Configuration
     POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
     POSTGRES_PORT: "5432"
     POSTGRES_DATABASE: "tranzrmoves-chatwoot"
-    
+
     # Azure Storage Configuration
     AZURE_STORAGE_CONTAINER: "chatwoot"
     AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
@@ -556,6 +554,36 @@ chatwoot:
       nginx.ingress.kubernetes.io/proxy-body-size: "50m"
       cert-manager.io/cluster-issuer: "tranzr-letsencrypt-production"
       nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+      # WebSocket support - enable WebSocket upgrade
+      nginx.ingress.kubernetes.io/websocket-services: "tranzr-moves-chatwoot"
+      # Increase timeouts for long-lived WebSocket connections
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+      # Disable buffering for WebSocket (critical for real-time communication)
+      # Note: This may affect large file uploads, but is required for WebSocket
+      nginx.ingress.kubernetes.io/proxy-buffering: "off"
+      # Use HTTP/1.1 for WebSocket support (required)
+      nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+      # Keep connections alive for better WebSocket performance
+      nginx.ingress.kubernetes.io/upstream-keepalive-connections: "50"
+      nginx.ingress.kubernetes.io/upstream-keepalive-timeout: "60"
+      nginx.ingress.kubernetes.io/upstream-keepalive-requests: "100"
+      # Session affinity for WebSocket (important with multiple replicas)
+      # Required for WebSocket to maintain connection to same pod
+      nginx.ingress.kubernetes.io/affinity: "cookie"
+      nginx.ingress.kubernetes.io/session-cookie-name: "chatwoot-sticky"
+      nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+      nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+      nginx.ingress.kubernetes.io/session-cookie-samesite: "Lax"
+      nginx.ingress.kubernetes.io/session-cookie-path: "/"
+      # Additional WebSocket optimizations - set required headers
+      nginx.ingress.kubernetes.io/configuration-snippet: |
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     hosts:
       - host: chat.tranzrmoves.com
         paths:
@@ -590,7 +618,6 @@ chatwoot:
   podSecurityContext: {}
   securityContext: {}
 
-
   # --- External Secrets configuration ---
   externalSecrets:
     enabled: true
@@ -599,7 +626,7 @@ chatwoot:
     secretStoreRef:
       name: azure-kv-cluster-store
       kind: ClusterSecretStore
-    
+
     # Chatwoot secrets - add your chatwoot-specific secrets here
     secrets:
       - secretKey: SECRET_KEY_BASE
@@ -641,7 +668,7 @@ chatwoot:
 
     # CNPG cluster secret to extract database URI from
     cnpgSecretName: tranzr-moves-pgcluster-superuser # superuser secret
-    cnpgUriKey: uri   # key inside CNPG secret containing connection string
+    cnpgUriKey: uri # key inside CNPG secret containing connection string
     postgresUsername: username
     postgresPassword: password
 
@@ -661,7 +688,6 @@ chatwoot:
   secretStore:
     enabled: true
     name: chatwoot-k8s-secretstore
-
 
 pgcluster:
   enabled: true
@@ -707,7 +733,6 @@ pgcluster:
       database: "tranzrmoves-chatwoot"
       owner: "tranzrmoves"
 
-
   backups:
     enabled: true
     # Azure: https://<storageAccount>.<serviceName>.core.windows.net/<containerName><path>
@@ -743,8 +768,7 @@ pgcluster:
       jobs: 2
 
     scheduledBackups:
-      -
-        # -- Scheduled backup name
+      - # -- Scheduled backup name
         name: scheduled-backup
         # -- Schedule in cron format
         schedule: "0 0 0 * * 1,3,5"
