@@ -1,9 +1,9 @@
 dependencies:
 - name: chatwoot
   repository: https://chatwoot.github.io/charts
-  version: 2.0.8
+  version: 2.0.9
 - name: cluster
   repository: https://cloudnative-pg.github.io/charts
   version: 0.3.1
-digest: sha256:9e9ca69440b6cbae78b42b0831d289c4aa72f26b691d2a5eedc0c7eff6be45e4
-generated: "2025-11-07T23:18:24.490275595Z"
+digest: sha256:883a9cc5be4b2491a20e9a3c62242faa9bc9f6df0536c585fc983dac3a699b70
+generated: "2026-01-21T11:26:15.542936781Z"

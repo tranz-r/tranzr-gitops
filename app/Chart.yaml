@@ -25,7 +25,7 @@ appVersion: "0.15.3"
 
 dependencies:
   - name: chatwoot
-    version: 2.0.8
+    version: 2.0.9
     repository: "https://chatwoot.github.io/charts"
   - name: cluster
     alias: pgcluster
