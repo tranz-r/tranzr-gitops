@@ -1,0 +1,12 @@
+# Staging environment overrides.
+# Merged with values.yaml by the staging ApplicationSet (develop branch).
+# Add staging-only settings here: lower replicas, staging URLs, debug flags,
+# ingress config (if staging uses Ingress), etc.
+
+# Example overrides (uncomment and adjust as needed):
+# namespaceOverride: "tranzr-moves"
+# deployments:
+#   gateway:
+#     replicaCount: 1
+#   backend:
+#     replicaCount: 1

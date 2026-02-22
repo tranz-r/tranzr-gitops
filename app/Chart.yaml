@@ -25,12 +25,12 @@ appVersion: "0.16.0"
 
 dependencies:
   - name: chatwoot
-    version: 2.0.9
+    version: 2.0.11
     repository: "https://chatwoot.github.io/charts"
   - name: cluster
     alias: pgcluster
     enabled: true
-    version: 0.3.1
+    version: 0.5.0
     repository: https://cloudnative-pg.github.io/charts
 # Additional metadata
 keywords:

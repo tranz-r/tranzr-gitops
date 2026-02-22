@@ -1,0 +1,12 @@
+# Production environment overrides.
+# Merged with values.yaml by the production ApplicationSet (main branch).
+# Add production-only settings here: replicas, resources, ingress hosts,
+# image tags, feature flags, Gateway API config (if prod uses Gateway API), etc.
+
+# Example overrides (uncomment and adjust as needed):
+# namespaceOverride: "tranzr-moves"
+# deployments:
+#   gateway:
+#     replicaCount: 2
+#   backend:
+#     replicaCount: 2
