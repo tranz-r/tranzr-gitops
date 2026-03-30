@@ -1,6 +1,8 @@
 # Production environment overrides.
 # Merged with values.yaml by the production ApplicationSet (main branch).
 
+fullnameOverride: "trm-prod"
+
 global:
   # Production cluster StorageClass (must exist on the prod cluster)
   defaultStorageClass: "hcloud-volumes"

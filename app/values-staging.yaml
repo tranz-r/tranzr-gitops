@@ -2,6 +2,8 @@
 # Merged with values.yaml by the staging ApplicationSet (develop branch).
 # Must match Argo CD Application destination namespace (staging_namespace in Terraform).
 namespaceOverride: "tranzr-moves-staging"
+# Short release name for staging to keep resource names (e.g. CronJobs) under length limits.
+fullnameOverride: "trm-stg"
 
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
