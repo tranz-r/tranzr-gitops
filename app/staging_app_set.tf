@@ -22,7 +22,7 @@ resource "argocd_application_set" "staging" {
       }
 
       spec {
-        project = "tranzr-moves"
+        project = "tranzr-moves-staging"
         source {
           repo_url        = "https://github.com/tranz-r/tranzr-gitops.git"
           target_revision = "develop"
@@ -41,7 +41,7 @@ resource "argocd_application_set" "staging" {
         sync_policy {
           automated {
             prune     = false
-            self_heal  = true
+            self_heal = true
           }
           sync_options = ["CreateNamespace=true"]
         }
