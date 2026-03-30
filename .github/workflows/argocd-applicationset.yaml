@@ -23,8 +23,11 @@ jobs:
             echo "Reference: ${{ github.event.client_payload.ref }}"
           fi
 
+      # Staging Terraform must match develop (main may lag); prod dispatch uses main.
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.action == 'deploy-argocd-stg' && 'develop' || 'main' }}
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
