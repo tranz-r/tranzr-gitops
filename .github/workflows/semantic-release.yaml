@@ -105,11 +105,11 @@ jobs:
     if: needs.semantic-release.outputs.new-release-published == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger ArgoCD Deployment
+      - name: Trigger ArgoCD Deployment (production)
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: deploy-argocd
+          event-type: deploy-argocd-prod
           client-payload: |
             {
               "version": "${{ needs.semantic-release.outputs.new-release-version }}",

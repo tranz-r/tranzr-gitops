@@ -3,9 +3,9 @@ name: Terraform Deployment of ArgoCD Application Sets
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [deploy-argocd]
-  # Removed push trigger - this workflow should only run after semantic release
-  # or manual dispatch to prevent race conditions
+    types: [deploy-argocd-stg, deploy-argocd-prod]
+  # deploy-argocd-prod: triggered by semantic-release on main
+  # deploy-argocd-stg: triggered by push to develop (see trigger-staging-deploy.yaml)
 
 env:
   TF_VERSION: 1.5.7
@@ -14,106 +14,100 @@ jobs:
   terraform-deploy:
     runs-on: ubuntu-latest
     steps:
-     - name: Show trigger context
-       run: |
-         echo "Workflow triggered by: ${{ github.event_name }}"
-         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-           echo "Repository dispatch type: ${{ github.event.action }}"
-           echo "New version: ${{ github.event.client_payload.version }}"
-           echo "Reference: ${{ github.event.client_payload.ref }}"
-         fi
-         
-     - name: Checkout
-       uses: actions/checkout@v4
+      - name: Show trigger context
+        run: |
+          echo "Workflow triggered by: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Repository dispatch type: ${{ github.event.action }}"
+            echo "New version: ${{ github.event.client_payload.version }}"
+            echo "Reference: ${{ github.event.client_payload.ref }}"
+          fi
 
-     - name: Setup Terraform
-       uses: hashicorp/setup-terraform@v3
-       with:
-         terraform_version: ${{ env.TF_VERSION }}
-        
+      - name: Checkout
+        uses: actions/checkout@v4
 
-     - name: Set Terraform Environment Variables
-       run: |
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Set Terraform Environment Variables
+        run: |
           echo "ARM_CLIENT_ID=$(jq -r .clientId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
           echo "ARM_CLIENT_SECRET=$(jq -r .clientSecret <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
           echo "ARM_TENANT_ID=$(jq -r .tenantId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
           echo "ARM_SUBSCRIPTION_ID=$(jq -r .subscriptionId <<< '${{ secrets.AZURE_CREDENTIALS }}')" >> $GITHUB_ENV
 
-     # Set up kubeconfig from the GitHub Secret
-     - name: Get OIDC Token from Keycloak
-       run: |
-            TOKEN=$(curl -X POST \
-            ${{ secrets.KEYCLOAK_ISSUER_URL }}/protocol/openid-connect/token \
+      # Auth: staging uses OAuth2 (Keycloak), production uses kubeconfig
+      - name: Auth staging (OAuth2 / Keycloak)
+        if: github.event.action == 'deploy-argocd-stg'
+        run: |
+          TOKEN=$(curl -sS -X POST "${{ secrets.KEYCLOAK_ISSUER_URL }}/protocol/openid-connect/token" \
             -H "Content-Type: application/x-www-form-urlencoded" \
             -d "client_id=github-actions" \
             -d "client_secret=${{ secrets.KEYCLOAK_CLIENT_SECRET }}" \
             -d "grant_type=client_credentials" | jq -r '.access_token')
-            echo "Generated token for Kubernetes access"
-            echo "OIDC_TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "K8S_HOST=${{ secrets.K8S_API_SERVER }}" >> $GITHUB_ENV
+          echo "K8S_TOKEN=$TOKEN" >> $GITHUB_ENV
 
-     - name: Terraform Init
-       working-directory: ./app
-       run: terraform init -upgrade
+      - name: Read kubeConfig from organization secret for production
+        if: github.event.action == 'deploy-argocd-prod' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" > "${{ github.workspace }}/kubeconfig"
+          echo "KUBECONFIG_PATH=${{ github.workspace }}/kubeconfig" >> $GITHUB_ENV
 
-     - name: Terraform Validate
-       working-directory: ./app
-       run: terraform validate
+      # Fail if no cluster auth: need either (K8S_HOST + K8S_TOKEN) or KUBECONFIG_PATH
+      - name: Require cluster auth
+        run: |
+          if [ -n "${{ env.KUBECONFIG_PATH }}" ] && [ -f "${{ env.KUBECONFIG_PATH }}" ]; then
+            echo "Cluster auth: kubeconfig (${{ env.KUBECONFIG_PATH }})"
+          elif [ -n "${{ env.K8S_HOST }}" ] && [ -n "${{ env.K8S_TOKEN }}" ]; then
+            echo "Cluster auth: host + token"
+          else
+            echo "::error::Cluster auth missing. Set either (K8S_HOST + K8S_TOKEN) for staging or KUBECONFIG_PATH for production (kubeconfig file)."
+            exit 1
+          fi
 
-     - name: Terraform Plan
-       working-directory: ./app
-       env:
-         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
-         TF_VAR_k8s_token: ${{ env.OIDC_TOKEN }}
-         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
-       run: terraform plan
+      - name: Terraform Init
+        working-directory: ./app
+        run: terraform init -upgrade
 
-     - name: Terraform Apply
-       working-directory: ./app
-       env:
-         TF_VAR_k8s_host: ${{ secrets.K8S_API_SERVER }}
-         TF_VAR_k8s_token: ${{ env.OIDC_TOKEN }}
-         TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
-       run: terraform apply -auto-approve
+      - name: Terraform Validate
+        working-directory: ./app
+        run: terraform validate
 
-    #  - name: Trigger ArgoCD Application Sync
-    #    env:
-    #      ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-    #    run: |
-    #      # Debug environment variables
-    #      echo "🔍 Debug: ARGOCD_SERVER = $ARGOCD_SERVER"
-         
-    #      # Install ArgoCD CLI
-    #      echo "📦 Installing ArgoCD CLI..."
-    #      curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-    #      sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
-    #      rm argocd-linux-amd64
-         
-    #      # Verify ArgoCD CLI installation
-    #      echo "✅ ArgoCD CLI version:"
-    #      argocd version --client
-         
-    #      # Login to ArgoCD (using admin password)
-    #      echo "🔐 Logging into ArgoCD at: $ARGOCD_SERVER"
-    #      argocd login "$ARGOCD_SERVER" --username admin --password "${{ secrets.ARGOCD_ADMIN_PASSWORD }}" --insecure
-         
-    #      # Sync the application (fire and forget)
-    #      echo "🔄 Triggering sync for tranzr-moves application..."
-    #      argocd app sync tranzr-moves --force
-         
-    #      echo "✅ Sync triggered successfully! ArgoCD will complete the deployment in the background."
+      # Provider uses kubeconfig_path when set (prod), else host+token (staging)
+      - name: Terraform Plan
+        working-directory: ./app
+        env:
+          TF_VAR_kubeconfig_path: ${{ env.KUBECONFIG_PATH }}
+          TF_VAR_k8s_host: ${{ env.K8S_HOST }}
+          TF_VAR_k8s_token: ${{ env.K8S_TOKEN }}
+          TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+          TF_VAR_production_cluster_server: ${{ secrets.HETZNER_PROD_CLUSTER_SERVER }}
+        run: terraform plan
 
-     - name: Deployment Summary
-       run: |
-         echo "🎯 **ArgoCD ApplicationSet Deployment Complete!**" >> $GITHUB_STEP_SUMMARY
-         echo "" >> $GITHUB_STEP_SUMMARY
-         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-           echo "- **Triggered by:** Semantic Release" >> $GITHUB_STEP_SUMMARY
-           echo "- **New Version:** ${{ github.event.client_payload.version }}" >> $GITHUB_STEP_SUMMARY
-         else
-           echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-         fi
-         echo "- **ApplicationSet:** tranzr-moves" >> $GITHUB_STEP_SUMMARY
-         echo "- **Target Namespace:** tranzr-moves-system" >> $GITHUB_STEP_SUMMARY
-         echo "- **Terraform Status:** Applied successfully ✅" >> $GITHUB_STEP_SUMMARY
-         echo "- **ArgoCD Sync:** Triggered (completing in background) 🚀" >> $GITHUB_STEP_SUMMARY
-       
+      - name: Terraform Apply
+        working-directory: ./app
+        env:
+          TF_VAR_kubeconfig_path: ${{ env.KUBECONFIG_PATH }}
+          TF_VAR_k8s_host: ${{ env.K8S_HOST }}
+          TF_VAR_k8s_token: ${{ env.K8S_TOKEN }}
+          TF_VAR_argocd_admin_password: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+          TF_VAR_production_cluster_server: ${{ secrets.HETZNER_PROD_CLUSTER_SERVER }}
+        run: terraform apply -auto-approve
+
+      - name: Deployment Summary
+        run: |
+          echo "🎯 **ArgoCD ApplicationSets Deployment Complete!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "- **Event:** ${{ github.event.action }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Version:** ${{ github.event.client_payload.version || 'N/A' }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "- **Auth:** ${{ github.event.action == 'deploy-argocd-stg' && 'Staging (OAuth2/Keycloak)' || 'Production (kubeconfig)' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Production:** tranzr-moves (main → prod)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Staging:** tranzr-moves-staging (develop → staging)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Terraform Status:** Applied successfully ✅" >> $GITHUB_STEP_SUMMARY

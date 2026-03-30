@@ -25,13 +25,12 @@ appVersion: "0.16.0"
 
 dependencies:
   - name: chatwoot
-    version: 2.0.9
+    version: 2.0.17
     repository: "https://chatwoot.github.io/charts"
-  - name: cluster
-    alias: pgcluster
+  - name: redis
     enabled: true
-    version: 0.3.1
-    repository: https://cloudnative-pg.github.io/charts
+    version: 23.1.1
+    repository: oci://registry-1.docker.io/bitnamicharts
 # Additional metadata
 keywords:
   - microservices

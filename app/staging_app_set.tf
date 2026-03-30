@@ -1,13 +1,14 @@
-resource "argocd_application_set" "production" {
+# Staging: develop branch -> staging cluster
+resource "argocd_application_set" "staging" {
   metadata {
-    name = "tranzr-moves"
+    name = "tranzr-moves-staging"
   }
 
   spec {
     generator {
       git {
         repo_url = "https://github.com/tranz-r/tranzr-gitops.git"
-        revision = "main"
+        revision = "develop"
 
         directory {
           path = "app"
@@ -17,30 +18,30 @@ resource "argocd_application_set" "production" {
 
     template {
       metadata {
-        name = "tranzr-moves"
+        name = "tranzr-moves-staging"
       }
 
       spec {
         project = "tranzr-moves"
         source {
           repo_url        = "https://github.com/tranz-r/tranzr-gitops.git"
-          target_revision = "main"
+          target_revision = "develop"
           path            = "{{path}}"
 
           helm {
-            value_files = ["values.yaml", "values-production.yaml"]
+            value_files = ["values.yaml", "values-staging.yaml"]
           }
         }
 
         destination {
-          server    = var.production_cluster_server
-          namespace = var.production_namespace
+          server    = var.staging_cluster_server
+          namespace = var.staging_namespace
         }
 
         sync_policy {
           automated {
             prune     = false
-            self_heal = true
+            self_heal  = true
           }
           sync_options = ["CreateNamespace=true"]
         }

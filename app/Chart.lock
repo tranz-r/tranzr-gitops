@@ -1,9 +1,9 @@
 dependencies:
 - name: chatwoot
   repository: https://chatwoot.github.io/charts
-  version: 2.0.9
-- name: cluster
-  repository: https://cloudnative-pg.github.io/charts
-  version: 0.3.1
-digest: sha256:883a9cc5be4b2491a20e9a3c62242faa9bc9f6df0536c585fc983dac3a699b70
-generated: "2026-01-21T11:26:15.542936781Z"
+  version: 2.0.17
+- name: redis
+  repository: oci://registry-1.docker.io/bitnamicharts
+  version: 23.1.1
+digest: sha256:b8dbf1434d46fa5554f37c489514d49741037d2bedecba963d6cbd743974bd38
+generated: "2026-03-30T15:39:50.458538817+01:00"
