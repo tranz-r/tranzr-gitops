@@ -1,12 +1,34 @@
 # Staging environment overrides.
 # Merged with values.yaml by the staging ApplicationSet (develop branch).
-# Add staging-only settings here: lower replicas, staging URLs, debug flags,
-# ingress config (if staging uses Ingress), etc.
 
-# Example overrides (uncomment and adjust as needed):
-# namespaceOverride: "tranzr-moves"
-# deployments:
-#   gateway:
-#     replicaCount: 1
-#   backend:
-#     replicaCount: 1
+global:
+  # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
+  # to the StorageClass that exists on the staging cluster (can differ from production).
+  defaultStorageClass: "synology-iscsi-delete"
+
+ingress:
+  enabled: true
+
+pgcluster:
+  cluster:
+    storage:
+      storageClass: "synology-iscsi-delete"
+
+gatewayApi:
+  enabled: false
+
+chatwoot:
+  ingress:
+    enabled: true
+  # Enable internal bundled Postgres & Redis
+  postgresql:
+    enabled: true
+    primary:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc
+        size: 10Gi
+  redis:
+    enabled: true
+    master:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc

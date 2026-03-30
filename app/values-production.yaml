@@ -1,12 +1,40 @@
 # Production environment overrides.
 # Merged with values.yaml by the production ApplicationSet (main branch).
-# Add production-only settings here: replicas, resources, ingress hosts,
-# image tags, feature flags, Gateway API config (if prod uses Gateway API), etc.
 
-# Example overrides (uncomment and adjust as needed):
-# namespaceOverride: "tranzr-moves"
-# deployments:
-#   gateway:
-#     replicaCount: 2
-#   backend:
-#     replicaCount: 2
+global:
+  # Production cluster StorageClass (must exist on the prod cluster)
+  defaultStorageClass: "hcloud-volumes"
+
+ingress:
+  enabled: false
+
+pgcluster:
+  cluster:
+    storage:
+      # CNPG volumes: use same class as global.defaultStorageClass for prod
+      storageClass: "hcloud-volumes"
+
+gatewayApi:
+  enabled: true
+  # Override nested keys here as needed, e.g. gateway.hostname, routes.api.hostname
+
+chatwoot:
+  ingress:
+    enabled: false
+  # Enable internal bundled Postgres & Redis
+  postgresql:
+    enabled: true
+    primary:
+      persistence:
+        storageClass: hcloud-volumes
+        size: 10Gi
+  redis:
+    enabled: true
+    master:
+      persistence:
+        storageClass: hcloud-volumes
+
+  env:
+    FRONTEND_URL: "https://chat.tranzr.co.uk"
+    MAILER_SENDER_EMAIL: "tranzrchat@tranzr.co.uk"
+    SMTP_DOMAIN: "tranzr.co.uk"

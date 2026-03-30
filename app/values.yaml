@@ -2,12 +2,42 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-# Global settings
+# Global settings (override per env in values-production.yaml / values-staging.yaml)
 global:
-  defaultStorageClass: "synology-iscsi-delete"
+  defaultStorageClass: "synology-iscsi-delete-wffc"
 
 # Namespace override
 namespaceOverride: "tranzr-moves"
+
+# Gateway API (Gateway + HTTPRoute) — production only; enable in values-production.yaml
+gatewayApi:
+  enabled: false
+  gateway:
+    name: tranzr-gateway
+    namespace: gateway-system
+    className: nginx
+    clusterIssuer: tranzr-letsencrypt-production
+    # Hostname pattern for both HTTP and HTTPS listeners (e.g. wildcard)
+    hostname: "*.tranzr.co.uk"
+    tlsSecretName: tranzr-wildcard-tls
+  routes:
+    chatwoot:
+      name: tranzr-chatwoot-route
+      hostname: chat.tranzr.co.uk
+      serviceName: tranzr-moves-chatwoot
+      servicePort: 3000
+    httpRedirect:
+      name: http-to-https-redirect
+      hostnames:
+        - api.tranzr.co.uk
+        - gateway.tranzr.co.uk
+      redirectStatusCode: 301
+    api:
+      name: tranzr-api
+      namespace: tranzr-api
+      hostname: api.tranzr.co.uk
+      serviceName: tranzr-gateway
+      servicePort: 80
 
 # Deployments configuration
 deployments:
@@ -86,7 +116,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.17.0"
+      tag: "0.18.2"
 
     # Container port configuration
     containerPort: 8080
@@ -229,7 +259,7 @@ services:
 
 # Ingress configuration
 ingress:
-  enabled: true
+  enabled: false
   className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "tranzr-letsencrypt-production"
@@ -243,8 +273,7 @@ ingress:
           pathType: Prefix
           serviceName: tranzr-gateway
           servicePort: 80
-  tls:
-    []
+  tls: []
     # - secretName: tranzr-gateway-tls
     #   hosts:
     #     - api.tranzrmoves.com
@@ -351,6 +380,12 @@ externalSecrets:
       remoteRef:
         key: tranzr-supabase-database-host
 
+    # Redis secrets
+    - secretKey: redis-REDIS_PASSWORD
+      description: "Redis password"
+      remoteRef:
+        key: redis-password
+
 # Node selector, tolerations, and affinity
 nodeSelector: {}
 
@@ -448,21 +483,24 @@ volumes: []
 volumeMounts: []
 
 chatwoot:
-  # Disable bundled Postgres & Redis; we'll use external ones
+  # Enable internal bundled Postgres & Redis
   postgresql:
-    enabled: false
-    postgresqlHost: tranzr-moves-pgcluster-rw
-    postgresqlPort: 5432
+    enabled: true
+    primary:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc
+        size: 10Gi
   redis:
-    enabled: false
-    host: redis-master.redis-system.svc.cluster.local
-    port: 6379
+    enabled: true
+    master:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc
 
   # Reference to existing Kubernetes Secret that holds all environment variables.
   # This Secret should contain keys like:
   #   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
   #   REDIS_HOST, REDIS_PASSWORD, SECRET_KEY_BASE, SMTP_ADDRESS, SMTP_USERNAME, SMTP_PASSWORD
-  existingEnvSecret: chatwoot-unified-env
+  existingEnvSecret: chatwoot-env-secrets
 
   # Non-sensitive environment configuration
   env:
@@ -500,38 +538,6 @@ chatwoot:
 
     BRAND_NAME: "Tranzr Moves"
     INSTALLATION_NAME: "Tranzr Moves Chat"
-
-  # Web application deployment configuration
-  web:
-    replicaCount: 1
-    hpa:
-      enabled: false
-      cputhreshold: 80
-      minpods: 1
-      maxpods: 3
-    resources:
-      requests:
-        cpu: 200m
-        memory: 512Mi
-      limits:
-        cpu: 1
-        memory: 1Gi
-
-  # Background worker deployment configuration
-  worker:
-    replicaCount: 1
-    hpa:
-      enabled: false
-      cputhreshold: 80
-      minpods: 2
-      maxpods: 5
-    resources:
-      requests:
-        cpu: 200m
-        memory: 512Mi
-      limits:
-        cpu: 1
-        memory: 1Gi
 
   # Internal service configuration (ClusterIP)
   services:
@@ -589,28 +595,6 @@ chatwoot:
                   number: 3000
     tls: []
 
-  # Database migration job
-  hooks:
-    migrate:
-      env:
-        - name: POSTGRES_HOST
-          value: "tranzr-moves-pgcluster-rw"
-        - name: POSTGRES_PORT
-          value: "5432"
-      hookAnnotation: "post-install,post-upgrade"
-      resources:
-        requests:
-          memory: 1000Mi
-        limits:
-          memory: 1000Mi
-
-  # Optional scheduling and security context
-  nodeSelector: {}
-  tolerations: []
-  affinity: {}
-  podSecurityContext: {}
-  securityContext: {}
-
   # --- External Secrets configuration ---
   externalSecrets:
     enabled: true
@@ -626,6 +610,7 @@ chatwoot:
         description: "Chatwoot secret key base"
         remoteRef:
           key: chatwoot-secret-key-base
+      # This can be removed if using internal Redis
       - secretKey: REDIS_PASSWORD
         description: "Chatwoot Redis password"
         remoteRef:
@@ -681,109 +666,3 @@ chatwoot:
   secretStore:
     enabled: true
     name: chatwoot-k8s-secretstore
-
-pgcluster:
-  enabled: true
-  type: postgresql
-
-  version:
-    # -- PostgreSQL major version to use
-    postgresql: "18"
-
-  mode: standalone
-
-  cluster:
-    instances: 2
-    imageName: "ghcr.io/cloudnative-pg/postgresql:18.0"
-    imagePullPolicy: IfNotPresent
-
-    storage:
-      size: 10Gi
-      storageClass: "synology-iscsi-delete"
-
-    resources:
-      requests:
-        memory: "512Mi"
-        cpu: 500m
-      limits:
-        memory: "1Gi"
-        cpu: 1000m
-
-    priorityClassName: ""
-    primaryUpdateMethod: switchover
-    primaryUpdateStrategy: unsupervised
-    logLevel: "info"
-
-    affinity:
-      enablePodAntiAffinity: true
-      topologyKey: topology.kubernetes.io/zone
-
-    enableSuperuserAccess: true
-
-    enablePDB: true
-
-    initdb:
-      database: "tranzrmoves-chatwoot"
-      owner: "tranzrmoves"
-
-  backups:
-    enabled: true
-    # Azure: https://<storageAccount>.<serviceName>.core.windows.net/<containerName><path>
-    destinationPath: "https://tranzrmovessa.blob.core.windows.net/chatwoot-pg-backup"
-    # -- One of `s3`, `azure` or `google`
-    provider: azure
-    azure:
-      path: "/"
-      connectionString: ""
-      storageAccount: ""
-      storageKey: ""
-      storageSasToken: ""
-      containerName: ""
-      serviceName: blob
-      inheritFromAzureAD: false
-    secret:
-      create: false
-      name: "azure-credential"
-
-    wal:
-      # -- WAL compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
-      compression: gzip
-      # -- Whether to instruct the storage provider to encrypt WAL files. One of `` (use the storage container default), `AES256` or `aws:kms`.
-      encryption: AES256
-      # -- Number of WAL files to be archived or restored in parallel.
-      maxParallel: 1
-    data:
-      # -- Data compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
-      compression: gzip
-      # -- Whether to instruct the storage provider to encrypt data files. One of `` (use the storage container default), `AES256` or `aws:kms`.
-      encryption: AES256
-      # -- Number of data files to be archived or restored in parallel.
-      jobs: 2
-
-    scheduledBackups:
-      - # -- Scheduled backup name
-        name: scheduled-backup
-        # -- Schedule in cron format
-        schedule: "0 0 0 * * 1,3,5"
-        # -- Backup owner reference
-        backupOwnerReference: self
-        # -- Backup method, can be `barmanObjectStore` (default) or `volumeSnapshot`
-        method: barmanObjectStore
-
-    # -- Retention policy for backups
-    retentionPolicy: "7d"
-
-  externalSecretBackupCredentials:
-    enabled: true
-    name: azure-credential
-    refreshInterval: "1h"
-    secretStoreRef:
-      name: azure-kv-cluster-store
-      kind: ClusterSecretStore
-    data:
-      - secretKey: AZURE_STORAGE_ACCOUNT
-        remoteRef:
-          key: tranzrmoves-storage-account-name
-      - secretKey: AZURE_STORAGE_SAS_TOKEN
-        remoteRef:
-          key: chatwoot-postgres-backup-sas-token
