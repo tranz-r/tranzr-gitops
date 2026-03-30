@@ -3,7 +3,7 @@ name: Terraform Deployment of ArgoCD Application Sets
 on:
   workflow_dispatch:
   repository_dispatch:
-    types: [deploy-argocd]
+    types: [deploy-argocd,deploy-argocd-stg,deploy-argocd-prod]
   # Removed push trigger - this workflow should only run after semantic release
   # or manual dispatch to prevent race conditions
 
