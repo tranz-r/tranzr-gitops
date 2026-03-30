@@ -22,7 +22,7 @@ resource "argocd_application_set" "staging" {
       }
 
       spec {
-        project = "tranzr-moves-staging"
+        project = "tranzr-moves"
         source {
           repo_url        = "https://github.com/tranz-r/tranzr-gitops.git"
           target_revision = "develop"
