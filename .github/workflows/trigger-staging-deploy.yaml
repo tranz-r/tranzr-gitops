@@ -5,8 +5,8 @@ on:
   push:
     branches:
       - develop
-    paths:
-      - 'app/**'
+    # paths:
+    #   - 'app/**'
 
 permissions:
   contents: write
