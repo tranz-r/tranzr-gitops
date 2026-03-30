@@ -44,7 +44,7 @@ variable "staging_cluster_server" {
 }
 
 variable "staging_namespace" {
-  description = "Namespace for staging deployment"
+  description = "Namespace for staging deployment (must differ from production when both apps target the same cluster)"
   type        = string
-  default     = "tranzr-moves-system"
+  default     = "tranzr-moves-staging"
 }

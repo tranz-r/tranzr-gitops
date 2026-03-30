@@ -1,5 +1,7 @@
 # Staging environment overrides.
 # Merged with values.yaml by the staging ApplicationSet (develop branch).
+# Must match Argo CD Application destination namespace (staging_namespace in Terraform).
+namespaceOverride: "tranzr-moves-staging"
 
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass

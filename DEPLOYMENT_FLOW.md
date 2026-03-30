@@ -270,7 +270,7 @@ The repo supports two clusters (Option B): **production** (from `main`) and **st
 ### Optional Terraform variables
 
 - `production_cluster_server` (default: in-cluster)
-- `production_namespace`, `staging_namespace` (default: `tranzr-moves-system`)
+- `production_namespace` (default: `tranzr-moves-system`), `staging_namespace` (default: `tranzr-moves-staging`; must differ from production when both apps use the same cluster)
 
 Pass via repo secrets/vars or Terraform tfvars if you need to override.
 
