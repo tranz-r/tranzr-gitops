@@ -1,0 +1,34 @@
+# Staging environment overrides.
+# Merged with values.yaml by the staging ApplicationSet (develop branch).
+
+global:
+  # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
+  # to the StorageClass that exists on the staging cluster (can differ from production).
+  defaultStorageClass: "synology-iscsi-delete"
+
+ingress:
+  enabled: true
+
+pgcluster:
+  cluster:
+    storage:
+      storageClass: "synology-iscsi-delete"
+
+gatewayApi:
+  enabled: false
+
+chatwoot:
+  ingress:
+    enabled: true
+  # Enable internal bundled Postgres & Redis
+  postgresql:
+    enabled: true
+    primary:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc
+        size: 10Gi
+  redis:
+    enabled: true
+    master:
+      persistence:
+        storageClass: synology-iscsi-delete-wffc

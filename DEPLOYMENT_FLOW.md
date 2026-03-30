@@ -241,3 +241,42 @@ kubectl get ingress -n tranzr-moves-system
 ✅ **Scalability**: Auto-scaling via HPA configurations  
 ✅ **Monitoring**: Built-in health checks and probes  
 
+## Dual-cluster setup (staging + production)
+
+The repo supports two clusters (Option B): **production** (from `main`) and **staging** (from `develop`).
+
+### ApplicationSets
+
+| ApplicationSet           | Branch   | Cluster   | Value files                          |
+|-------------------------|----------|-----------|--------------------------------------|
+| `tranzr-moves`          | `main`   | Production| `values.yaml`, `values-production.yaml` |
+| `tranzr-moves-staging`  | `develop`| Staging   | `values.yaml`, `values-staging.yaml` |
+
+### Triggers and auth (Option A)
+
+- **Production:** Semantic release on `main` triggers `deploy-argocd-prod` → workflow uses **kubeconfig** (secrets `PRODUCTION_K8S_API_SERVER`, `PRODUCTION_K8S_TOKEN`).
+- **Staging:** Push to `develop` (with `app/**` changes) triggers `deploy-argocd-stg` via [trigger-staging-deploy.yaml](.github/workflows/trigger-staging-deploy.yaml) → workflow uses **OAuth2 / Keycloak** (secrets `KEYCLOAK_*`, `STAGING_K8S_API_SERVER`).
+- **Manual run:** `workflow_dispatch` uses production (kubeconfig) auth.
+
+### Prerequisites
+
+1. **Staging cluster** must be registered in Argo CD (same instance as production). Use the Argo CD UI or add a cluster secret; note the cluster API server URL.
+2. **GitHub secrets:**
+   - `STAGING_CLUSTER_SERVER` — staging cluster API URL (for ApplicationSet destination).
+   - **Staging auth (OAuth2):** `KEYCLOAK_ISSUER_URL`, `KEYCLOAK_CLIENT_SECRET`, `STAGING_K8S_API_SERVER` (staging API URL for Terraform Helm provider).
+   - **Production auth (kubeconfig):** `PRODUCTION_K8S_API_SERVER`, `PRODUCTION_K8S_TOKEN` (from your prod kubeconfig).
+   - `ARGOCD_ADMIN_PASSWORD` — Argo CD admin password.
+
+### Optional Terraform variables
+
+- `production_cluster_server` (default: in-cluster)
+- `production_namespace`, `staging_namespace` (default: `tranzr-moves-system`)
+
+Pass via repo secrets/vars or Terraform tfvars if you need to override.
+
+### Promotion flow
+
+1. Merge to `develop` → staging cluster auto-syncs.
+2. Validate on staging.
+3. Merge `develop` → `main` → production cluster auto-syncs (after semantic release triggers the workflow).
+

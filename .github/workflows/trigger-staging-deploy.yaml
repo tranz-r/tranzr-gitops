@@ -1,0 +1,28 @@
+# Triggers Argo CD ApplicationSet workflow for staging (Keycloak auth) when develop is updated.
+name: Trigger Staging Deploy
+
+on:
+  push:
+    branches:
+      - develop
+    # paths:
+    #   - 'app/**'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger ArgoCD Deployment (staging)
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-argocd-stg
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
