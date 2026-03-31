@@ -512,7 +512,7 @@ chatwoot:
     INSTALLATION_ENV: helm
     ACTIVE_STORAGE_SERVICE: microsoft # https://developers.chatwoot.com/self-hosted/deployment/storage/supported-providers
     ENABLE_ACCOUNT_SIGNUP: "false" # disable public signup
-    FORCE_SSL: "true"
+    # FORCE_SSL: "true"
     FRONTEND_URL: "https://chat.tranzrmoves.com"
     RAILS_LOG_TO_STDOUT: "true"
     RAILS_MAX_THREADS: "5"
