@@ -528,9 +528,9 @@ chatwoot:
     # Note: Removed SMTP_SSL and SMTP_TLS to avoid conflicts with STARTTLS on port 587
 
     # Database Configuration
-    POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
-    POSTGRES_PORT: "5432"
-    POSTGRES_DATABASE: "tranzrmoves-chatwoot"
+    # POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
+    # POSTGRES_PORT: "5432"
+    # POSTGRES_DATABASE: "tranzrmoves-chatwoot"
 
     # Azure Storage Configuration
     AZURE_STORAGE_CONTAINER: "chatwoot"
@@ -590,7 +590,7 @@ chatwoot:
             pathType: Prefix
             backend:
               service:
-                name: tranzr-moves-chatwoot
+                name: tranzr-moves-staging-chatwoot
                 port:
                   number: 3000
     tls: []
