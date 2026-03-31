@@ -611,10 +611,10 @@ chatwoot:
         remoteRef:
           key: chatwoot-secret-key-base
       # This can be removed if using internal Redis
-      - secretKey: REDIS_PASSWORD
-        description: "Chatwoot Redis password"
-        remoteRef:
-          key: redis-password
+      # - secretKey: REDIS_PASSWORD
+      #   description: "Chatwoot Redis password"
+      #   remoteRef:
+      #     key: redis-password
 
       # SMTP secrets
       - secretKey: SMTP_USERNAME
