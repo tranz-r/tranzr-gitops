@@ -496,6 +496,10 @@ chatwoot:
       persistence:
         storageClass: synology-iscsi-delete-wffc
 
+  hooks:
+    migrate:
+      hookAnnotation: "pre-install,pre-upgrade"
+
   # Reference to existing Kubernetes Secret that holds all environment variables.
   # This Secret should contain keys like:
   #   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
