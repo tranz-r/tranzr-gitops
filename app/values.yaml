@@ -498,7 +498,7 @@ chatwoot:
 
   hooks:
     migrate:
-      hookAnnotation: "pre-install,pre-upgrade"
+      hookAnnotation: "post-install,post-upgrade"
 
   # Reference to existing Kubernetes Secret that holds all environment variables.
   # This Secret should contain keys like:
