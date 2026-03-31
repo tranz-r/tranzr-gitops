@@ -632,37 +632,6 @@ chatwoot:
         remoteRef:
           key: chatwoot-azure-storage-access-key
 
-  unifiedExternalSecret:
-    enabled: true
-
-    # Name of the ExternalSecret resource
-    name: chatwoot-unified-env
-
-    # Name of the resulting target Kubernetes Secret (what Chatwoot will consume)
-    targetName: chatwoot-unified-env
-
-    # Frequency of reconciliation
-    refreshInterval: 1h
-
-    # CNPG cluster secret to extract database URI from
-    cnpgSecretName: tranzr-moves-pgcluster-superuser # superuser secret
-    cnpgUriKey: uri # key inside CNPG secret containing connection string
-    postgresUsername: username
-    postgresPassword: password
-
-    # Existing Azure KV-based secret name
-    azureSecretName: chatwoot-env-secrets
-
-    existingSecretStore: chatwoot-k8s-secretstore
-
-    # Optional additional template mappings (key-value)
-    extraTemplateKeys:
-      AZURE_STORAGE_ACCESS_KEY: "AZURE_STORAGE_ACCESS_KEY"
-      REDIS_PASSWORD: "REDIS_PASSWORD"
-      SECRET_KEY_BASE: "SECRET_KEY_BASE"
-      SMTP_USERNAME: "SMTP_USERNAME"
-      SMTP_PASSWORD: "SMTP_PASSWORD"
-
   secretStore:
     enabled: true
     name: chatwoot-k8s-secretstore
