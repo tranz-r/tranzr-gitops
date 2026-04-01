@@ -8,7 +8,7 @@ fullnameOverride: "trm-stg"
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
   # to the StorageClass that exists on the staging cluster (can differ from production).
-  defaultStorageClass: "synology-iscsi-delete"
+  defaultStorageClass: "synology-iscsi-delete-wffc"
 
 ingress:
   enabled: true
@@ -16,7 +16,7 @@ ingress:
 pgcluster:
   cluster:
     storage:
-      storageClass: "synology-iscsi-delete"
+      storageClass: "synology-iscsi-delete-wffc"
 
 gatewayApi:
   enabled: false
