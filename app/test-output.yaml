@@ -350,7 +350,7 @@ spec:
                   number: 80
 ---
 # Source: tranzrmoves/templates/external-secrets/application-secrets.yaml
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: tranzrmoves-secrets
@@ -375,7 +375,7 @@ spec:
   data:
 ---
 # Source: tranzrmoves/templates/external-secrets/imagepull-secrets.yaml
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: github-registry-secret
