@@ -48,7 +48,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.18.0"
+      tag: "0.18.1"
 
     # Container port configuration
     containerPort: 8080
@@ -72,8 +72,6 @@ deployments:
 
     # Environment variables from External Secrets
     envFromSecrets:
-      - name: SUPER_BASE_JWT_SECRET_KEY
-        secretKey: supabase-jwt-secret-key
       - name: SUPER_BASE_PROJECT_ID
         secretKey: supabase-project-id
 
@@ -116,7 +114,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.18.2"
+      tag: "0.18.4"
 
     # Container port configuration
     containerPort: 8080
@@ -156,22 +154,8 @@ deployments:
         secretKey: supabase-url
       - name: SUPABASE_KEY
         secretKey: supabase-key
-      - name: ADDRESS_API_KEY
-        secretKey: getaddressio-address-api-key
-      - name: ADDRESS_ADMINISTRATION_KEY
-        secretKey: getaddressio-address-administration-key
       - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET
         secretKey: tranzr-stripe-webhook-signing-secret
-      - name: AWS_SES_SMTP_HOST
-        secretKey: aws-ses-smtp-host
-      - name: AWS_SES_SMTP_USERNAME
-        secretKey: aws-ses-smtp-username
-      - name: AWS_SES_SMTP_PASSWORD
-        secretKey: aws-ses-smtp-password
-      - name: AWS_ACCESS_KEY_ID
-        secretKey: aws-access-key-id
-      - name: AWS_SECRET_ACCESS_KEY
-        secretKey: aws-secret-access-key
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
       - name: MAPBOX_TOKEN
@@ -299,10 +283,6 @@ externalSecrets:
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
     # Gateway secrets - currently none configured
-    - secretKey: supabase-jwt-secret-key
-      description: "Supabase JWT signing secret"
-      remoteRef:
-        key: supabase-jwt-secret-key
     - secretKey: supabase-project-id
       description: "Supabase project ID"
       remoteRef:
@@ -321,38 +301,10 @@ externalSecrets:
       description: "Supabase service key"
       remoteRef:
         key: supabase-key
-    - secretKey: getaddressio-address-api-key
-      description: "GetAddress.io API key"
-      remoteRef:
-        key: getaddressio-address-api-key
-    - secretKey: getaddressio-address-administration-key
-      description: "GetAddress.io administration key"
-      remoteRef:
-        key: getaddressio-address-administration-key
     - secretKey: tranzr-stripe-webhook-signing-secret
       description: "Stripe webhook signing secret"
       remoteRef:
         key: tranzr-stripe-webhook-signing-secret
-    - secretKey: aws-ses-smtp-host
-      description: "AWS SES SMTP host"
-      remoteRef:
-        key: aws-ses-smtp-host
-    - secretKey: aws-ses-smtp-username
-      description: "AWS SES SMTP username"
-      remoteRef:
-        key: aws-ses-smtp-username
-    - secretKey: aws-ses-smtp-password
-      description: "AWS SES SMTP password"
-      remoteRef:
-        key: aws-ses-smtp-password
-    - secretKey: aws-access-key-id
-      description: "AWS access key ID"
-      remoteRef:
-        key: aws-access-key-id
-    - secretKey: aws-secret-access-key
-      description: "AWS secret access key"
-      remoteRef:
-        key: aws-secret-access-key
     - secretKey: mapbox-token
       description: "Mapbox token"
       remoteRef:
@@ -380,12 +332,6 @@ externalSecrets:
       remoteRef:
         key: tranzr-supabase-database-host
 
-    # Redis secrets
-    - secretKey: redis-REDIS_PASSWORD
-      description: "Redis password"
-      remoteRef:
-        key: redis-password
-
 # Node selector, tolerations, and affinity
 nodeSelector: {}
 
@@ -412,7 +358,7 @@ jobs:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
       pullPolicy: IfNotPresent
-      tag: "0.17.0" # Should match the backend service version
+      tag: "0.18.3" # Should match the backend service version
     restartPolicy: Never
     database:
       port: 5432
@@ -496,6 +442,10 @@ chatwoot:
       persistence:
         storageClass: synology-iscsi-delete-wffc
 
+  hooks:
+    migrate:
+      hookAnnotation: "post-install,post-upgrade"
+
   # Reference to existing Kubernetes Secret that holds all environment variables.
   # This Secret should contain keys like:
   #   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_USERNAME, POSTGRES_PASSWORD,
@@ -508,7 +458,7 @@ chatwoot:
     INSTALLATION_ENV: helm
     ACTIVE_STORAGE_SERVICE: microsoft # https://developers.chatwoot.com/self-hosted/deployment/storage/supported-providers
     ENABLE_ACCOUNT_SIGNUP: "false" # disable public signup
-    FORCE_SSL: "true"
+    # FORCE_SSL: "true"
     FRONTEND_URL: "https://chat.tranzrmoves.com"
     RAILS_LOG_TO_STDOUT: "true"
     RAILS_MAX_THREADS: "5"
@@ -528,9 +478,9 @@ chatwoot:
     # Note: Removed SMTP_SSL and SMTP_TLS to avoid conflicts with STARTTLS on port 587
 
     # Database Configuration
-    POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
-    POSTGRES_PORT: "5432"
-    POSTGRES_DATABASE: "tranzrmoves-chatwoot"
+    # POSTGRES_HOST: "tranzr-moves-pgcluster-rw"
+    # POSTGRES_PORT: "5432"
+    # POSTGRES_DATABASE: "tranzrmoves-chatwoot"
 
     # Azure Storage Configuration
     AZURE_STORAGE_CONTAINER: "chatwoot"
@@ -590,7 +540,7 @@ chatwoot:
             pathType: Prefix
             backend:
               service:
-                name: tranzr-moves-chatwoot
+                name: tranzr-moves-staging-chatwoot
                 port:
                   number: 3000
     tls: []
@@ -610,11 +560,6 @@ chatwoot:
         description: "Chatwoot secret key base"
         remoteRef:
           key: chatwoot-secret-key-base
-      # This can be removed if using internal Redis
-      - secretKey: REDIS_PASSWORD
-        description: "Chatwoot Redis password"
-        remoteRef:
-          key: redis-password
 
       # SMTP secrets
       - secretKey: SMTP_USERNAME
@@ -631,37 +576,6 @@ chatwoot:
         description: "Azure Blob Storage access key"
         remoteRef:
           key: chatwoot-azure-storage-access-key
-
-  unifiedExternalSecret:
-    enabled: true
-
-    # Name of the ExternalSecret resource
-    name: chatwoot-unified-env
-
-    # Name of the resulting target Kubernetes Secret (what Chatwoot will consume)
-    targetName: chatwoot-unified-env
-
-    # Frequency of reconciliation
-    refreshInterval: 1h
-
-    # CNPG cluster secret to extract database URI from
-    cnpgSecretName: tranzr-moves-pgcluster-superuser # superuser secret
-    cnpgUriKey: uri # key inside CNPG secret containing connection string
-    postgresUsername: username
-    postgresPassword: password
-
-    # Existing Azure KV-based secret name
-    azureSecretName: chatwoot-env-secrets
-
-    existingSecretStore: chatwoot-k8s-secretstore
-
-    # Optional additional template mappings (key-value)
-    extraTemplateKeys:
-      AZURE_STORAGE_ACCESS_KEY: "AZURE_STORAGE_ACCESS_KEY"
-      REDIS_PASSWORD: "REDIS_PASSWORD"
-      SECRET_KEY_BASE: "SECRET_KEY_BASE"
-      SMTP_USERNAME: "SMTP_USERNAME"
-      SMTP_PASSWORD: "SMTP_PASSWORD"
 
   secretStore:
     enabled: true
