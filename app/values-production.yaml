@@ -20,6 +20,15 @@ gatewayApi:
   enabled: true
   # Override nested keys here as needed, e.g. gateway.hostname, routes.api.hostname
 
+deployments:
+  backend:
+    replicaCount: 2
+    env:
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzr.co.uk/moves/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzr.co.uk/moves/checkout/cancel"
+
 chatwoot:
   ingress:
     enabled: false
