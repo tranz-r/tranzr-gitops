@@ -1,10 +1,11 @@
 {{- if .Values.gatewayApi.enabled }}
 {{- $g := .Values.gatewayApi.gateway }}
+{{- $gatewayNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $g.namespace }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
   name: {{ $g.name }}
-  namespace: {{ $g.namespace }}
+  namespace: {{ $gatewayNamespace }}
   annotations:
     cert-manager.io/cluster-issuer: {{ $g.clusterIssuer | quote }}
 spec:

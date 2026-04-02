@@ -14,7 +14,7 @@ gatewayApi:
   enabled: false
   gateway:
     name: tranzr-gateway
-    namespace: gateway-system
+    namespace: ""
     className: nginx
     clusterIssuer: tranzr-letsencrypt-production
     # Hostname pattern for both HTTP and HTTPS listeners (e.g. wildcard)
@@ -34,7 +34,7 @@ gatewayApi:
       redirectStatusCode: 301
     api:
       name: tranzr-api
-      namespace: tranzr-api
+      namespace: ""
       hostname: api.tranzr.co.uk
       serviceName: tranzr-gateway
       servicePort: 80
