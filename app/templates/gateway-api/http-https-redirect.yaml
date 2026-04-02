@@ -1,15 +1,16 @@
 {{- if .Values.gatewayApi.enabled }}
 {{- $g := .Values.gatewayApi.gateway }}
 {{- $r := .Values.gatewayApi.routes.httpRedirect }}
+{{- $gatewayNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $g.namespace }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: {{ $r.name }}
-  namespace: {{ $g.namespace }}
+  namespace: {{ $gatewayNamespace }}
 spec:
   parentRefs:
     - name: {{ $g.name }}
-      namespace: {{ $g.namespace }}
+      namespace: {{ $gatewayNamespace }}
       sectionName: http
   hostnames:
 {{- range $r.hostnames }}
