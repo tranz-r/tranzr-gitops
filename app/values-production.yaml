@@ -32,7 +32,7 @@ deployments:
 chatwoot:
   hooks:
     migrate:
-      hookAnnotation: "pre-install,pre-upgrade"
+      hookAnnotation: "post-install,pre-upgrade"
   ingress:
     enabled: false
   # Enable internal bundled Postgres & Redis
