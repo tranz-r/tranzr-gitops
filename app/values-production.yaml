@@ -30,6 +30,9 @@ deployments:
         value: "https://tranzr.co.uk/moves/checkout/cancel"
 
 chatwoot:
+  hooks:
+    migrate:
+      hookAnnotation: "pre-install,post-upgrade"
   serviceAccount:
     create: false
     name: trm-prod
