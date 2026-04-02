@@ -30,6 +30,9 @@ deployments:
         value: "https://tranzr.co.uk/moves/checkout/cancel"
 
 chatwoot:
+  serviceAccount:
+    create: false
+    name: trm-prod
   ingress:
     enabled: false
   # Enable internal bundled Postgres & Redis

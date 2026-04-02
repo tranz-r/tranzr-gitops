@@ -22,6 +22,9 @@ gatewayApi:
   enabled: false
 
 chatwoot:
+  serviceAccount:
+    create: false
+    name: trm-stg
   ingress:
     enabled: true
   # Enable internal bundled Postgres & Redis
