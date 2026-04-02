@@ -50,5 +50,5 @@ chatwoot:
 
   env:
     FRONTEND_URL: "https://chat.tranzr.co.uk"
-    MAILER_SENDER_EMAIL: "tranzrchat@tranzr.co.uk"
+    MAILER_SENDER_EMAIL: "noreply@tranzr.co.uk"
     SMTP_DOMAIN: "tranzr.co.uk"
