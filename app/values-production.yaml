@@ -30,9 +30,6 @@ deployments:
         value: "https://tranzr.co.uk/moves/checkout/cancel"
 
 chatwoot:
-  hooks:
-    migrate:
-      hookAnnotation: "post-install,pre-upgrade"
   ingress:
     enabled: false
   # Enable internal bundled Postgres & Redis
