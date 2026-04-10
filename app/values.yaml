@@ -49,7 +49,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/api-gateway
       pullPolicy: IfNotPresent
-      tag: "0.19.1"
+      tag: "0.20.0"
 
     # Container port configuration
     containerPort: 8080
