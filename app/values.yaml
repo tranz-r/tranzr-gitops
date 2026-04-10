@@ -115,7 +115,7 @@ deployments:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-services
       pullPolicy: IfNotPresent
-      tag: "0.25.1"
+      tag: "0.26.1"
 
     # Container port configuration
     containerPort: 8080
@@ -359,7 +359,7 @@ jobs:
     image:
       repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
       pullPolicy: IfNotPresent
-      tag: "0.25.1" # Should match the backend service version
+      tag: "0.26.1" # Should match the backend service version
     restartPolicy: Never
     database:
       port: 5432
