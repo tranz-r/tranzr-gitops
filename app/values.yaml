@@ -157,6 +157,8 @@ deployments:
         secretKey: supabase-key
       - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET
         secretKey: tranzr-stripe-webhook-signing-secret
+      - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET_V2
+        secretKey: tranzr-stripe-webhook-signing-secret-v2
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
       - name: MAPBOX_TOKEN
@@ -306,6 +308,10 @@ externalSecrets:
       description: "Stripe webhook signing secret"
       remoteRef:
         key: tranzr-stripe-webhook-signing-secret
+    - secretKey: tranzr-stripe-webhook-signing-secret-v2
+      description: "Stripe webhook signing secret for staging (or rotation)"
+      remoteRef:
+        key: tranzr-stripe-webhook-signing-secret-v2
     - secretKey: mapbox-token
       description: "Mapbox token"
       remoteRef:
