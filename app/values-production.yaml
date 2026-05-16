@@ -29,6 +29,17 @@ deployments:
       - name: CHECKOUT_SESSION_CANCEL_URL
         value: "https://tranzr.co.uk/moves/checkout/cancel"
 
+  gateway:
+    env:
+      - name: Cors__AllowedOrigins__0
+        value: "https://www.tranzr.co.uk"
+      - name: Cors__AllowedOrigins__1
+        value: "https://tranzr.co.uk"
+      - name: Cors__AllowedOrigins__2
+        value: "https://app.tranzr.co.uk"
+      - name: Cors__AllowedOrigins__3
+        value: "https://app.tranzr.co.uk"
+
 chatwoot:
   serviceAccount:
     create: false
