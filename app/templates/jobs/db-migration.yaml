@@ -78,8 +78,8 @@ spec:
       # Main migration container
       containers:
         - name: db-migrator
-          image: "{{ .Values.jobs.dbMigration.image.repository }}:{{ .Values.jobs.dbMigration.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.jobs.dbMigration.image.pullPolicy | default "IfNotPresent" }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "dbMigrator") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
           
           # Environment variables for database connection
           {{- if or .Values.jobs.dbMigration.env .Values.jobs.dbMigration.envFromSecrets }}

@@ -50,8 +50,8 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.deployments.gateway.image.repository }}:{{ .Values.deployments.gateway.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.deployments.gateway.image.pullPolicy }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "gateway") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
           ports:
             - name: http
               containerPort: {{ .Values.deployments.gateway.containerPort }}

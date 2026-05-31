@@ -3,7 +3,7 @@
 Deployments:
 {{- if .Values.deployments.gateway.enabled }}
   ✅ tranzr-gateway: {{ .Values.deployments.gateway.replicaCount }} replica(s)
-    - Image: {{ .Values.deployments.gateway.image.repository }}:{{ .Values.deployments.gateway.image.tag | default .Chart.AppVersion }}
+    - Image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "gateway") }}
     - Service: {{ .Values.services.gateway.name }} ({{ .Values.services.gateway.type }})
     {{- if .Values.deployments.gateway.autoscaling.enabled }}
     - Autoscaling: {{ .Values.deployments.gateway.autoscaling.minReplicas }}-{{ .Values.deployments.gateway.autoscaling.maxReplicas }} replicas
@@ -12,7 +12,7 @@ Deployments:
 
 {{- if .Values.deployments.backend.enabled }}
   ✅ tranzr-backend: {{ .Values.deployments.backend.replicaCount }} replica(s)
-    - Image: {{ .Values.deployments.backend.image.repository }}:{{ .Values.deployments.backend.image.tag | default .Chart.AppVersion }}
+    - Image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesServices") }}
     - Service: {{ .Values.services.backend.name }} ({{ .Values.services.backend.type }})
     {{- if .Values.deployments.backend.autoscaling.enabled }}
     - Autoscaling: {{ .Values.deployments.backend.autoscaling.minReplicas }}-{{ .Values.deployments.backend.autoscaling.maxReplicas }} replicas

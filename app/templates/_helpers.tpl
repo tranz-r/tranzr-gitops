@@ -60,3 +60,23 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Resolve container image reference from .Values.images.<key>.
+Per-image tag overrides images.movesVersion (used by gateway).
+Usage: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesServices") }}
+*/}}
+{{- define "tranzrmoves.imageRef" -}}
+{{- $root := .root -}}
+{{- $key := .key -}}
+{{- $img := required (printf "values.images.%s is required" $key) (index $root.Values.images $key) -}}
+{{- $tag := $img.tag | default $root.Values.images.movesVersion | default $root.Chart.AppVersion -}}
+{{- printf "%s:%s" $img.repository $tag -}}
+{{- end }}
+
+{{/*
+Default pull policy for Tranzr container images.
+*/}}
+{{- define "tranzrmoves.imagePullPolicy" -}}
+{{- .Values.images.pullPolicy | default "IfNotPresent" -}}
+{{- end }}

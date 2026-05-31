@@ -9,6 +9,20 @@ global:
 # Namespace override
 namespaceOverride: "tranzr-moves"
 
+# Container images — bump movesVersion once for backend, worker, and db-migrator (same CI release)
+images:
+  pullPolicy: IfNotPresent
+  movesVersion: "0.32.0"
+  gateway:
+    repository: ghcr.io/tranz-r/api-gateway
+    tag: "0.21.1"
+  movesServices:
+    repository: ghcr.io/tranz-r/tranzr-moves-services
+  movesWorker:
+    repository: ghcr.io/tranz-r/tranzr-moves-worker
+  dbMigrator:
+    repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
+
 # Gateway API (Gateway + HTTPRoute) — production only; enable in values-production.yaml
 gatewayApi:
   enabled: false
@@ -46,10 +60,7 @@ deployments:
     name: tranzr-gateway
     enabled: true
     replicaCount: 1
-    image:
-      repository: ghcr.io/tranz-r/api-gateway
-      pullPolicy: IfNotPresent
-      tag: "0.21.1"
+    # image: see images.gateway
 
     # Container port configuration
     containerPort: 8080
@@ -112,10 +123,7 @@ deployments:
     name: tranzr-service
     enabled: true
     replicaCount: 1
-    image:
-      repository: ghcr.io/tranz-r/tranzr-moves-services
-      pullPolicy: IfNotPresent
-      tag: "0.31.0"
+    # image: see images.movesServices + images.movesVersion
 
     # Container port configuration
     containerPort: 8080
@@ -161,6 +169,8 @@ deployments:
         secretKey: tranzr-stripe-webhook-signing-secret-v2
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
+      - name: ConnectionStrings__redis
+        secretKey: tranzr-redis-connection-string
       - name: MAPBOX_TOKEN
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
@@ -199,6 +209,66 @@ deployments:
       enabled: true
       minReplicas: 1
       maxReplicas: 15
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+  workerScheduler:
+    name: tranzr-moves-worker-scheduler
+    enabled: true
+    replicaCount: 1
+    # image: see images.movesWorker + images.movesVersion
+    env:
+      - name: PayLater__RecoveryIntervalMinutes
+        value: "60"
+      - name: PayLater__UseDurableMessaging
+        value: "true"
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+      - name: ConnectionStrings__redis
+        secretKey: tranzr-redis-connection-string
+      - name: ConnectionStrings__rabbitmq
+        secretKey: tranzr-rabbitmq-connection-string
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 256Mi
+    autoscaling:
+      enabled: false
+
+  workerProcessor:
+    name: tranzr-moves-worker-processor
+    enabled: true
+    replicaCount: 2
+    # image: see images.movesWorker + images.movesVersion
+    env:
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzrmoves.com/checkout/cancel"
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+      - name: ConnectionStrings__rabbitmq
+        secretKey: tranzr-rabbitmq-connection-string
+      - name: STRIPE_API_KEY
+        secretKey: tranzr-stripe-api-key
+      - name: COMMUNICATION_SERVICES_CONNECTION_STRING
+        secretKey: tranzr-communication-services-connection-string
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
@@ -264,6 +334,17 @@ ingress:
     # - secretName: tranzr-gateway-tls
     #   hosts:
     #     - api.tranzrmoves.com
+
+# Platform Redis/RabbitMQ — cluster DNS + AKV passwords composed into tranzrmoves-secrets
+platformMessaging:
+  enabled: true
+  redis:
+    host: redis.redis-system.svc.cluster.local
+    port: 6379
+  rabbitmq:
+    host: rabbitmq.rabbitmq-system.svc.cluster.local
+    port: 5672
+    username: admin
 
 # Consolidated External Secrets configuration
 externalSecrets:
@@ -362,10 +443,7 @@ jobs:
   dbMigration:
     enabled: true
     backoffLimit: 3
-    image:
-      repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
-      pullPolicy: IfNotPresent
-      tag: "0.31.0" # Should match the backend service version
+    # image: see images.dbMigrator + images.movesVersion
     restartPolicy: Never
     database:
       port: 5432

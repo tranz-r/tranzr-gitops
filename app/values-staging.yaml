@@ -21,6 +21,13 @@ pgcluster:
 gatewayApi:
   enabled: false
 
+# Platform Redis/RabbitMQ use redis-system / rabbitmq-system on the labgrid cluster too
+# (verified: svc redis + rabbitmq in those namespaces; *-stg-system namespaces are empty).
+
+jobs:
+  internalApiCronjob:
+    enabled: false
+
 chatwoot:
   serviceAccount:
     create: false

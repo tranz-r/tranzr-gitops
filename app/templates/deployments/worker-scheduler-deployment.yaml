@@ -1,23 +1,21 @@
-{{- if .Values.deployments.backend.enabled }}
+{{- if .Values.deployments.workerScheduler.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.deployments.backend.name }}
+  name: {{ .Values.deployments.workerScheduler.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
   labels:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: backend
+    app.kubernetes.io/component: worker-scheduler
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.deployments.backend.autoscaling.enabled }}
-  replicas: {{ .Values.deployments.backend.replicaCount }}
-  {{- end }}
+  replicas: {{ .Values.deployments.workerScheduler.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
       app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: backend
+      app.kubernetes.io/component: worker-scheduler
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -25,9 +23,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
         app.kubernetes.io/instance: {{ .Release.Name }}
-        app.kubernetes.io/component: backend
+        app.kubernetes.io/component: worker-scheduler
         helm.sh/chart: {{ include "tranzrmoves.chart" . }}
         app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -45,51 +43,31 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Values.deployments.backend.name }}
+        - name: worker
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesServices") | quote }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
-          ports:
-            - name: http
-              containerPort: {{ .Values.deployments.backend.containerPort }}
-              protocol: TCP
-          {{- if or .Values.deployments.backend.env .Values.deployments.backend.envFromSecrets }}
           env:
-            {{- range .Values.deployments.backend.env }}
+            - name: Worker__Role
+              value: Scheduler
+            {{- range .Values.deployments.workerScheduler.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
             {{- end }}
-            {{- range .Values.deployments.backend.envFromSecrets }}
+            {{- range .Values.deployments.workerScheduler.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.externalSecrets.name }}
                   key: {{ .secretKey }}
             {{- end }}
-          {{- end }}
-          {{- with .Values.deployments.backend.livenessProbe }}
-          livenessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.deployments.backend.readinessProbe }}
-          readinessProbe:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.deployments.backend.resources }}
+          {{- with .Values.deployments.workerScheduler.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.volumeMounts }}
-          volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.volumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -102,4 +80,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- end }} 
+{{- end }}
