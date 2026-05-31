@@ -21,8 +21,8 @@ pgcluster:
 gatewayApi:
   enabled: false
 
-# Platform Redis/RabbitMQ use redis-system / rabbitmq-system on the labgrid cluster too
-# (verified: svc redis + rabbitmq in those namespaces; *-stg-system namespaces are empty).
+# Platform Redis/RabbitMQ: redis-system / rabbitmq-system on labgrid (same as hetzner-k3s production).
+# Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
 jobs:
   internalApiCronjob:

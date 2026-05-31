@@ -80,3 +80,52 @@ Default pull policy for Tranzr container images.
 {{- define "tranzrmoves.imagePullPolicy" -}}
 {{- .Values.images.pullPolicy | default "IfNotPresent" -}}
 {{- end }}
+
+{{/*
+Platform Redis/RabbitMQ password env vars (hosts come from .Values.platformMessaging).
+Usage: {{ include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" false) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.platformMessagingPasswordEnv" -}}
+{{- $root := .root -}}
+{{- $redis := .redis | default false -}}
+{{- $rabbitmq := .rabbitmq | default false -}}
+{{- if $root.Values.platformMessaging.enabled }}
+{{- if $redis }}
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.externalSecrets.name }}
+      key: platform-redis-password
+{{- end }}
+{{- if $rabbitmq }}
+- name: RABBITMQ_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.externalSecrets.name }}
+      key: platform-rabbitmq-password
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Assemble ConnectionStrings from cluster DNS + platform passwords, then exec dotnet.
+Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" false) | nindent 10 }}
+*/}}
+{{- define "tranzrmoves.platformMessagingStartup" -}}
+{{- $root := .root -}}
+{{- $entrypoint := .entrypoint -}}
+{{- $redis := .redis | default false -}}
+{{- $rabbitmq := .rabbitmq | default false -}}
+{{- if and $root.Values.platformMessaging.enabled (or $redis $rabbitmq) }}
+command: ["/bin/sh", "-c"]
+args:
+  - |
+    {{- if $redis }}
+    export ConnectionStrings__redis="{{ $root.Values.platformMessaging.redis.host }}:{{ $root.Values.platformMessaging.redis.port }},password=${REDIS_PASSWORD}"
+    {{- end }}
+    {{- if $rabbitmq }}
+    export ConnectionStrings__rabbitmq="amqp://{{ $root.Values.platformMessaging.rabbitmq.username }}:${RABBITMQ_PASSWORD}@{{ $root.Values.platformMessaging.rabbitmq.host }}:{{ $root.Values.platformMessaging.rabbitmq.port }}"
+    {{- end }}
+    exec dotnet {{ $entrypoint }}
+{{- end }}
+{{- end }}

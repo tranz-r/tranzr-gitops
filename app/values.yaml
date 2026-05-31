@@ -169,8 +169,6 @@ deployments:
         secretKey: tranzr-stripe-webhook-signing-secret-v2
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
-      - name: ConnectionStrings__redis
-        secretKey: tranzr-redis-connection-string
       - name: MAPBOX_TOKEN
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
@@ -225,10 +223,6 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
-      - name: ConnectionStrings__redis
-        secretKey: tranzr-redis-connection-string
-      - name: ConnectionStrings__rabbitmq
-        secretKey: tranzr-rabbitmq-connection-string
     resources:
       requests:
         cpu: 100m
@@ -252,8 +246,6 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
-      - name: ConnectionStrings__rabbitmq
-        secretKey: tranzr-rabbitmq-connection-string
       - name: STRIPE_API_KEY
         secretKey: tranzr-stripe-api-key
       - name: COMMUNICATION_SERVICES_CONNECTION_STRING
@@ -335,7 +327,9 @@ ingress:
     #   hosts:
     #     - api.tranzrmoves.com
 
-# Platform Redis/RabbitMQ — cluster DNS + AKV passwords composed into tranzrmoves-secrets
+# Platform Redis/RabbitMQ — cluster DNS in redis-system / rabbitmq-system (see hetzner-k3s / labgrid).
+# Passwords only: platform-redis-password / platform-rabbitmq-password (same AKV keys as platform charts).
+# Connection strings are assembled at container start from these hosts + synced passwords.
 platformMessaging:
   enabled: true
   redis:
@@ -419,6 +413,16 @@ externalSecrets:
       description: "PostgreSQL database host"
       remoteRef:
         key: tranzr-supabase-database-host
+
+    # Platform Redis/RabbitMQ passwords (same AKV keys as hetzner-k3s / labgrid platform charts)
+    - secretKey: platform-redis-password
+      description: "Platform Redis password"
+      remoteRef:
+        key: platform-redis-password
+    - secretKey: platform-rabbitmq-password
+      description: "Platform RabbitMQ password"
+      remoteRef:
+        key: platform-rabbitmq-password
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}

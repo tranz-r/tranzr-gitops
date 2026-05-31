@@ -52,9 +52,11 @@ spec:
           {{- end }}
           image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" true) | nindent 10 }}
           env:
             - name: Worker__Role
               value: Processor
+            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
             {{- range .Values.deployments.workerProcessor.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

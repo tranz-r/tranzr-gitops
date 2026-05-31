@@ -52,12 +52,14 @@ spec:
           {{- end }}
           image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesServices") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" false) | nindent 10 }}
           ports:
             - name: http
               containerPort: {{ .Values.deployments.backend.containerPort }}
               protocol: TCP
-          {{- if or .Values.deployments.backend.env .Values.deployments.backend.envFromSecrets }}
+          {{- if or .Values.deployments.backend.env .Values.deployments.backend.envFromSecrets .Values.platformMessaging.enabled }}
           env:
+            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" false) | nindent 12 }}
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

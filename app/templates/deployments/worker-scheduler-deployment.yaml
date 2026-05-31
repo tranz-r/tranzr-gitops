@@ -50,9 +50,11 @@ spec:
           {{- end }}
           image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" true "rabbitmq" true) | nindent 10 }}
           env:
             - name: Worker__Role
               value: Scheduler
+            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" true) | nindent 12 }}
             {{- range .Values.deployments.workerScheduler.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
