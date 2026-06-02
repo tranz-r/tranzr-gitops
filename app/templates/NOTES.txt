@@ -19,6 +19,12 @@ Deployments:
     {{- end }}
 {{- end }}
 
+{{- if .Values.deployments.notifications.enabled }}
+  ✅ tranzr-notifications: {{ .Values.deployments.notifications.replicaCount }} replica(s)
+    - Image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "notifications") }}
+    - Service: {{ .Values.services.notifications.name }} ({{ .Values.services.notifications.type }})
+{{- end }}
+
 External Access:
 {{- if .Values.ingress.enabled }}
 {{- range $host := .Values.ingress.hosts }}

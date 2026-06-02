@@ -24,7 +24,13 @@ gatewayApi:
 # Platform Redis/RabbitMQ: redis-system / rabbitmq-system on labgrid (same as hetzner-k3s production).
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
+deployments:
+  notifications:
+    enabled: true
+
 jobs:
+  notificationsDbMigration:
+    enabled: true
   internalApiCronjob:
     enabled: false
 

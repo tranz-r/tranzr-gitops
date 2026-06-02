@@ -1,23 +1,21 @@
-{{- if .Values.deployments.backend.enabled }}
+{{- if .Values.deployments.notifications.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Values.deployments.backend.name }}
+  name: {{ .Values.deployments.notifications.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
   labels:
-    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-notifications
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: backend
+    app.kubernetes.io/component: notifications
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.deployments.backend.autoscaling.enabled }}
-  replicas: {{ .Values.deployments.backend.replicaCount }}
-  {{- end }}
+  replicas: {{ .Values.deployments.notifications.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-notifications
       app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: backend
+      app.kubernetes.io/component: notifications
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -25,9 +23,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-notifications
         app.kubernetes.io/instance: {{ .Release.Name }}
-        app.kubernetes.io/component: backend
+        app.kubernetes.io/component: notifications
         helm.sh/chart: {{ include "tranzrmoves.chart" . }}
         app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
         app.kubernetes.io/managed-by: {{ .Release.Service }}
@@ -45,53 +43,43 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: {{ .Values.deployments.backend.name }}
+        - name: notifications
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesServices") | quote }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "notifications") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
-          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" true) | nindent 10 }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Notifications.dll" "redis" false "rabbitmq" true) | nindent 10 }}
           ports:
             - name: http
-              containerPort: {{ .Values.deployments.backend.containerPort }}
+              containerPort: {{ .Values.deployments.notifications.containerPort }}
               protocol: TCP
-          {{- if or .Values.deployments.backend.env .Values.deployments.backend.envFromSecrets .Values.platformMessaging.enabled }}
           env:
-            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" true) | nindent 12 }}
-            {{- range .Values.deployments.backend.env }}
+            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
+            {{- range .Values.deployments.notifications.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
             {{- end }}
-            {{- range .Values.deployments.backend.envFromSecrets }}
+            {{- range .Values.deployments.notifications.envFromSecrets }}
             - name: {{ .name }}
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.externalSecrets.name }}
                   key: {{ .secretKey }}
             {{- end }}
-          {{- end }}
-          {{- with .Values.deployments.backend.livenessProbe }}
+          {{- with .Values.deployments.notifications.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.deployments.backend.readinessProbe }}
+          {{- with .Values.deployments.notifications.readinessProbe }}
           readinessProbe:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.deployments.backend.resources }}
+          {{- with .Values.deployments.notifications.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.volumeMounts }}
-          volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.volumes }}
-      volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -104,4 +92,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- end }} 
+{{- end }}

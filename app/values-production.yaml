@@ -47,7 +47,12 @@ deployments:
       - name: Cors__AllowedOrigins__3
         value: "https://app.tranzr.co.uk"
 
+  notifications:
+    enabled: true
+
 jobs:
+  notificationsDbMigration:
+    enabled: true
   internalApiCronjob:
     enabled: false
 
