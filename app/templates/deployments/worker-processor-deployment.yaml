@@ -56,6 +56,7 @@ spec:
           env:
             - name: Worker__Role
               value: Processor
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-processor") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
             {{- range .Values.deployments.workerProcessor.env }}
             - name: {{ .name }}

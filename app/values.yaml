@@ -12,7 +12,7 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.34.2"
+  movesVersion: "0.35.1"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.21.1"
@@ -373,6 +373,13 @@ ingress:
     # - secretName: tranzr-gateway-tls
     #   hosts:
     #     - api.tranzrmoves.com
+
+# OpenTelemetry export to in-cluster Grafana Alloy (monitoring-system).
+observability:
+  enabled: true
+  otlpEndpoint: http://monitoring-alloy.monitoring-system.svc.cluster.local:4317
+  otlpProtocol: grpc
+  environment: production
 
 # Platform Redis/RabbitMQ — cluster DNS in redis-system / rabbitmq-system (see hetzner-k3s / labgrid).
 # Passwords only: platform-redis-password / platform-rabbitmq-password (same AKV keys as platform charts).

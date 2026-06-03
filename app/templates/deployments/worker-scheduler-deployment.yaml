@@ -54,6 +54,7 @@ spec:
           env:
             - name: Worker__Role
               value: Scheduler
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-scheduler") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" true) | nindent 12 }}
             {{- range .Values.deployments.workerScheduler.env }}
             - name: {{ .name }}

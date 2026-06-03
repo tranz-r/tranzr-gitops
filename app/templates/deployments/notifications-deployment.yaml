@@ -56,6 +56,7 @@ spec:
               containerPort: {{ .Values.deployments.notifications.containerPort }}
               protocol: TCP
           env:
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-notifications") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
             {{- range .Values.deployments.notifications.env }}
             - name: {{ .name }}

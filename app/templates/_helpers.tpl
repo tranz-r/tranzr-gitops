@@ -129,3 +129,22 @@ args:
     exec dotnet {{ $entrypoint }}
 {{- end }}
 {{- end }}
+
+{{/*
+OpenTelemetry exporter env for instrumented Tranzr workloads.
+Usage: {{ include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-api") | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.observabilityEnv" -}}
+{{- $root := .root -}}
+{{- $serviceName := required "serviceName is required" .serviceName -}}
+{{- if $root.Values.observability.enabled }}
+- name: OTEL_SERVICE_NAME
+  value: {{ $serviceName | quote }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ $root.Values.observability.otlpEndpoint | quote }}
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: {{ $root.Values.observability.otlpProtocol | quote }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: deployment.environment={{ $root.Values.observability.environment }}
+{{- end }}
+{{- end }}

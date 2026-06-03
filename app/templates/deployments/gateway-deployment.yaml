@@ -56,8 +56,9 @@ spec:
             - name: http
               containerPort: {{ .Values.deployments.gateway.containerPort }}
               protocol: TCP
-          {{- if or .Values.deployments.gateway.env .Values.deployments.gateway.envFromSecrets }}
+          {{- if or .Values.deployments.gateway.env .Values.deployments.gateway.envFromSecrets .Values.observability.enabled }}
           env:
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-api-gateway") | nindent 12 }}
             {{- range .Values.deployments.gateway.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

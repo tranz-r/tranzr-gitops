@@ -21,6 +21,9 @@ pgcluster:
 gatewayApi:
   enabled: false
 
+observability:
+  environment: staging
+
 # Platform Redis/RabbitMQ: redis-system / rabbitmq-system on labgrid (same as hetzner-k3s production).
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
