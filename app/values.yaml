@@ -15,7 +15,7 @@ images:
   movesVersion: "0.35.1"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.21.1"
+    tag: "0.22.0"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:
