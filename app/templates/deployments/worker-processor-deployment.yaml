@@ -58,6 +58,10 @@ spec:
               value: Processor
             {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-processor") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
+            {{- range $key, $val := .Values.deployments.workerProcessor.payLater }}
+            - name: PayLater__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             {{- range .Values.deployments.workerProcessor.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

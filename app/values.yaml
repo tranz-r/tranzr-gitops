@@ -12,10 +12,10 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.39.0"
+  movesVersion: "0.46.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.23.0"
+    tag: "0.26.0"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:
@@ -36,25 +36,25 @@ gatewayApi:
     className: nginx
     clusterIssuer: tranzr-letsencrypt-production
     # Hostname pattern for both HTTP and HTTPS listeners (e.g. wildcard)
-    hostname: "*.tranzr.co.uk"
+    hostname: "*.tranzzer.com"
     tlsSecretName: tranzr-wildcard-tls
   routes:
     chatwoot:
       name: tranzr-chatwoot-route
-      hostname: chat.tranzr.co.uk
+      hostname: chat.tranzzer.com
       serviceName: tranzr-moves-chatwoot
       servicePort: 3000
     httpRedirect:
       name: http-to-https-redirect
       hostnames:
-        - api.tranzr.co.uk
-        - gateway.tranzr.co.uk
+        - api.tranzzer.com
+        - gateway.tranzzer.com
       # 301/302: many clients follow redirects with GET (POST body dropped). 308 preserves method+body.
       redirectStatusCode: 308
     api:
       name: tranzr-api
       namespace: ""
-      hostname: api.tranzr.co.uk
+      hostname: api.tranzzer.com
       serviceName: tranzr-gateway
       servicePort: 80
 
@@ -82,14 +82,16 @@ deployments:
       - name: Cors__AllowedOrigins__1
         value: "https://tranzrmoves.com"
       - name: Cors__AllowedOrigins__2
-        value: "https://www.tranzrgroup.com"
+        value: "https://app.tranzrmoves.com"
       - name: Cors__AllowedOrigins__3
-        value: "https://tranzrgroup.com"
+        value: "https://portal.tranzrmoves.com"
+      - name: Cors__AllowedOrigins__4
+        value: "https://admin.tranzrmoves.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
-      - name: SUPER_BASE_PROJECT_ID
-        secretKey: supabase-project-id
+      - name: SUPABASE_JWT_ISSUER
+        secretKey: supabase-jwt-issuer
 
     # Resource configuration
     resources:
@@ -142,16 +144,10 @@ deployments:
         value: "production"
       - name: CACHE_TTL
         value: "300"
-      - name: AWS_SES_SMTP_PORT
-        value: "587"
       - name: FROM_EMAIL
         value: "bookings@tranzrmoves.com"
       - name: FROM_NAME
-        value: "Tranzr Moves"
-      - name: AWS_DEFAULT_REGION
-        value: "eu-west-2"
-      - name: AWS_REGION
-        value: "eu-west-2"
+        value: "Tranzzer Moves"
       - name: MAPBOX_BASE_URL
         value: "https://api.mapbox.com"
       - name: CHECKOUT_SESSION_SUCCESS_URL
@@ -160,6 +156,10 @@ deployments:
         value: "https://tranzrmoves.com/checkout/cancel"
       - name: Notifications__UseDurableMessaging
         value: "true"
+      - name: BusinessPortal__QuoteJourneyBaseUrl
+        value: "https://tranzrmoves.com/moves"
+      - name: BusinessPortal__PortalBaseUrl
+        value: "https://portal.tranzrmoves.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
@@ -167,10 +167,12 @@ deployments:
         secretKey: tranzr-stripe-api-key
       - name: SUPABASE_URL
         secretKey: supabase-url
-      - name: SUPABASE_KEY
-        secretKey: supabase-key
-      - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET
-        secretKey: tranzr-stripe-webhook-signing-secret
+      - name: SUPABASE_JWT_ISSUER
+        secretKey: supabase-jwt-issuer
+      - name: SUPABASE_SECRET_KEY
+        secretKey: supabase-secret-key
+      - name: BUSINESS_PORTAL_INVITE_REDIRECT_URL
+        secretKey: business-portal-invite-redirect-url
       - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET_V2
         secretKey: tranzr-stripe-webhook-signing-secret-v2
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
@@ -219,11 +221,19 @@ deployments:
     enabled: true
     replicaCount: 1
     # image: see images.movesWorker + images.movesVersion
-    env:
-      - name: PayLater__RecoveryIntervalMinutes
-        value: "60"
-      - name: PayLater__UseDurableMessaging
-        value: "true"
+    # Keys match .NET property names; template emits PayLater__* / QuoteReminders__* env vars.
+    payLater:
+      RecoveryIntervalMinutes: 90
+      UseDurableMessaging: true
+      DepositChargeTimeZone: Europe/London
+    quoteReminders:
+      Enabled: true
+      ScanIntervalMinutes: 60
+      IdleHoursBeforeReminder: 24
+      ReminderCooldownDays: 7
+      FrontendBaseUrl: https://tranzrmoves.com
+      ResumeTokenLifetimeDays: 30
+      SendRemindersForBusinessQuotes: false
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
@@ -242,6 +252,8 @@ deployments:
     enabled: true
     replicaCount: 2
     # image: see images.movesWorker + images.movesVersion
+    payLater:
+      UseDurableMessaging: true
     env:
       - name: CHECKOUT_SESSION_SUCCESS_URL
         value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
@@ -414,29 +426,26 @@ externalSecrets:
   # Application secrets - add all your application secrets here
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
-    # Gateway secrets - currently none configured
-    - secretKey: supabase-project-id
-      description: "Supabase project ID"
-      remoteRef:
-        key: supabase-project-id
-
     # Backend secrets
     - secretKey: tranzr-stripe-api-key
       description: "Stripe API key for payment processing"
       remoteRef:
         key: tranzr-stripe-api-key
+
+    # Supabase Secrets
     - secretKey: supabase-url
       description: "Supabase database URL"
       remoteRef:
         key: supabase-url
-    - secretKey: supabase-key
-      description: "Supabase service key"
+    - secretKey: supabase-jwt-issuer
+      description: "Supabase JWT issuer"
       remoteRef:
-        key: supabase-key
-    - secretKey: tranzr-stripe-webhook-signing-secret
-      description: "Stripe webhook signing secret"
+        key: supabase-jwt-issuer
+    - secretKey: supabase-secret-key
+      description: "Supabase secret key"
       remoteRef:
-        key: tranzr-stripe-webhook-signing-secret
+        key: supabase-secret-key
+
     - secretKey: tranzr-stripe-webhook-signing-secret-v2
       description: "Stripe webhook signing secret for staging (or rotation)"
       remoteRef:
@@ -477,6 +486,11 @@ externalSecrets:
       description: "Platform RabbitMQ password"
       remoteRef:
         key: platform-rabbitmq-password
+
+    - secretKey: business-portal-invite-redirect-url
+      description: "Business portal invite redirect URL"
+      remoteRef:
+        key: business-portal-invite-redirect-url
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
