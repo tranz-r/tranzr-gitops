@@ -12,7 +12,7 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.47.0"
+  movesVersion: "0.48.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.26.0"
@@ -221,7 +221,7 @@ deployments:
     enabled: true
     replicaCount: 1
     # image: see images.movesWorker + images.movesVersion
-    # Keys match .NET property names; template emits PayLater__* / QuoteReminders__* env vars.
+    # Keys match .NET property names; template emits PayLater__* / QuoteReminders__* / E2eDataPurge__* env vars.
     payLater:
       RecoveryIntervalMinutes: 90
       UseDurableMessaging: true
@@ -234,6 +234,17 @@ deployments:
       FrontendBaseUrl: https://tranzrmoves.com
       ResumeTokenLifetimeDays: 30
       SendRemindersForBusinessQuotes: false
+    # Staging enables this in values-staging.yaml. Keep false in production.
+    e2eDataPurge:
+      Enabled: false
+      RunAtHour: 2
+      RunAtMinute: 0
+      TimeZoneId: Europe/London
+      MinAgeHours: 6
+      CreatedByValues:
+        - e2e
+      EmailDomain: tranzrmoves.com
+      DryRun: false
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string

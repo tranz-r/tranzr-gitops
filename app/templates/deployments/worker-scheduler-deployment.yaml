@@ -64,6 +64,17 @@ spec:
             - name: QuoteReminders__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
+            {{- if kindIs "slice" $val }}
+            {{- range $i, $item := $val }}
+            - name: E2eDataPurge__{{ $key }}__{{ $i }}
+              value: {{ $item | quote }}
+            {{- end }}
+            {{- else }}
+            - name: E2eDataPurge__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- end }}
             {{- range .Values.deployments.workerScheduler.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
