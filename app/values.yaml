@@ -12,10 +12,10 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.52.1"
+  movesVersion: "0.53.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.28.0"
+    tag: "0.29.0"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:
