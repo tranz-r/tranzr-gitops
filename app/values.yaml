@@ -12,7 +12,7 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.53.0"
+  movesVersion: "0.54.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.29.0"
@@ -614,8 +614,14 @@ jobs:
         memory: 128Mi
 
 # Additional volumes and volume mounts
-volumes: []
-volumeMounts: []
+# A writable temp dir is required under the read-only root filesystem so that
+# Chromium (server-side confirmation PDF rendering) can create its profile.
+volumes:
+  - name: tmp
+    emptyDir: {}
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
 
 chatwoot:
   # Enable internal bundled Postgres & Redis
