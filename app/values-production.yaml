@@ -58,6 +58,8 @@ deployments:
         value: "https://portal.tranzzer.com"
       - name: Cors__AllowedOrigins__4
         value: "https://admin.tranzzer.com"
+      - name: Cors__AllowedOrigins__5
+        value: "https://drivers.tranzzer.com"
 
   notifications:
     enabled: true

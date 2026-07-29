@@ -87,6 +87,8 @@ deployments:
         value: "https://portal.tranzrmoves.com"
       - name: Cors__AllowedOrigins__4
         value: "https://admin.tranzrmoves.com"
+      - name: Cors__AllowedOrigins__5
+        value: "https://drivers.tranzrmoves.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
