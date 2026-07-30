@@ -187,9 +187,23 @@ The chart enforces security best practices:
 ### External Secrets
 
 All sensitive data is managed through External Secrets Operator:
-- Application secrets from Azure Key Vault
+- Application secrets from Azure Key Vault (`externalSecrets.applicationSecrets` in `values.yaml`)
 - GitHub registry credentials for private images
 - Automatic secret rotation support
+
+#### Web Push VAPID (Drivers Portal)
+
+Create these Key Vault secrets **before** Argo sync (private key is sensitive):
+
+```bash
+az keyvault secret set --vault-name <vault> \
+  --name tranzr-webpush-vapid-public-key --value '<vapid-public>'
+az keyvault secret set --vault-name <vault> \
+  --name tranzr-webpush-vapid-private-key --value '<vapid-private>'
+```
+
+Wired to backend + notifications as `WebPush__VapidPublicKey` / `WebPush__VapidPrivateKey`.
+Generate locally: `pnpm generate-vapid-keys` in `desktop-webapp/apps/driver-portal`.
 
 ## Monitoring & Observability
 

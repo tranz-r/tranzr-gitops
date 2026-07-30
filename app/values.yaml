@@ -12,10 +12,10 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.58.0"
+  movesVersion: "0.61.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.31.0"
+    tag: "0.33.0"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:
@@ -162,6 +162,8 @@ deployments:
         value: "https://tranzrmoves.com/moves"
       - name: BusinessPortal__PortalBaseUrl
         value: "https://portal.tranzrmoves.com"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
@@ -185,6 +187,10 @@ deployments:
         secretKey: tranzr-azure-storage-connection-string
       - name: TURNSTILE_SECRET_KEY
         secretKey: cloudflare-turnstile-secret-key
+      - name: WebPush__VapidPublicKey
+        secretKey: tranzr-webpush-vapid-public-key
+      - name: WebPush__VapidPrivateKey
+        secretKey: tranzr-webpush-vapid-private-key
 
     # Resource configuration
     resources:
@@ -304,11 +310,17 @@ deployments:
         value: Acs
       - name: Notifications__UseDurableMessaging
         value: "true"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
       - name: COMMUNICATION_SERVICES_CONNECTION_STRING
         secretKey: tranzr-communication-services-connection-string
+      - name: WebPush__VapidPublicKey
+        secretKey: tranzr-webpush-vapid-public-key
+      - name: WebPush__VapidPrivateKey
+        secretKey: tranzr-webpush-vapid-private-key
     resources:
       requests:
         cpu: 500m
@@ -479,6 +491,19 @@ externalSecrets:
       description: "Cloudflare turnstile secret key"
       remoteRef:
         key: cloudflare-turnstile-secret-key
+
+    # Web Push VAPID (Drivers Portal assignment alerts)
+    # Create in Azure Key Vault before sync:
+    #   az keyvault secret set --vault-name <vault> --name tranzr-webpush-vapid-public-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-webpush-vapid-private-key --value '...'
+    - secretKey: tranzr-webpush-vapid-public-key
+      description: "Web Push VAPID public key (Drivers Portal)"
+      remoteRef:
+        key: tranzr-webpush-vapid-public-key
+    - secretKey: tranzr-webpush-vapid-private-key
+      description: "Web Push VAPID private key (Drivers Portal) — sensitive"
+      remoteRef:
+        key: tranzr-webpush-vapid-private-key
 
     # Database secrets
     - secretKey: tranzr-supabase-database-connection-string
