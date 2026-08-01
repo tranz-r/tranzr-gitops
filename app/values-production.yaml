@@ -10,6 +10,9 @@ global:
 ingress:
   enabled: false
 
+# Production uses Gateway API (not Ingress). NGF upgrades WebSockets by default;
+# SignalR scale-out relies on Service sessionAffinity + Redis backplane on the API.
+
 pgcluster:
   cluster:
     storage:

@@ -12,6 +12,8 @@ global:
 
 ingress:
   enabled: true
+  # Labgrid: nginx Ingress → tranzr-gateway. Annotations in values.yaml enable
+  # SignalR WebSocket timeouts + cookie affinity for /hubs/tracking.
 
 pgcluster:
   cluster:

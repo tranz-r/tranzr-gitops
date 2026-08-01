@@ -12,7 +12,7 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.61.2"
+  movesVersion: "0.62.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.33.0"
@@ -375,6 +375,12 @@ services:
     port: 80
     targetPort: 8080
     protocol: TCP
+    # Stick clients to one gateway pod so SignalR negotiate + transport stay aligned
+    # (YARP then sees a stable source IP toward the backend Service).
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
 
   backend:
     name: tranzr-service
@@ -382,6 +388,11 @@ services:
     port: 80
     targetPort: 8080
     protocol: TCP
+    # SignalR connection state is per-pod; affinity + Redis backplane cover scale-out.
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
 
   notifications:
     name: tranzr-moves-notifications
@@ -390,7 +401,10 @@ services:
     targetPort: 8080
     protocol: TCP
 
-# Ingress configuration
+# Ingress configuration (staging / labgrid — production uses Gateway API instead).
+# ingress-nginx upgrades WebSockets when Upgrade/Connection headers are present;
+# long timeouts + cookie affinity keep SignalR negotiate + transport on one gateway pod.
+# See: https://kubernetes.github.io/ingress-nginx/user-guide/miscellaneous/websocket/
 ingress:
   enabled: false
   className: "nginx"
@@ -399,6 +413,19 @@ ingress:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # SignalR / WebSocket (TrackingHub at /hubs/tracking)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+    nginx.ingress.kubernetes.io/session-cookie-name: "tranzr-api-sticky"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-samesite: "Lax"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
   hosts:
     - host: api.tranzrmoves.com
       paths:
