@@ -1,6 +1,7 @@
 {{- if .Values.gatewayApi.enabled }}
 {{- $g := .Values.gatewayApi.gateway }}
 {{- $r := .Values.gatewayApi.routes.httpRedirect }}
+{{- if gt (len $r.hostnames) 0 }}
 {{- $gatewayNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $g.namespace }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -22,4 +23,5 @@ spec:
           requestRedirect:
             scheme: https
             statusCode: {{ $r.redirectStatusCode }}
+{{- end }}
 {{- end }}

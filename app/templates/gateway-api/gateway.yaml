@@ -1,5 +1,8 @@
 {{- if .Values.gatewayApi.enabled }}
 {{- $g := .Values.gatewayApi.gateway }}
+{{- /* false | default true is true in Sprig — treat missing create as true */}}
+{{- $createGateway := or (not (hasKey $g "create")) $g.create }}
+{{- if $createGateway }}
 {{- $gatewayNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $g.namespace }}
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -31,4 +34,5 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
+{{- end }}
 {{- end }}

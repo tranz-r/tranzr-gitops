@@ -27,10 +27,12 @@ images:
   notificationsDbMigrator:
     repository: ghcr.io/tranz-r/notifications-db-migrator
 
-# Gateway API (Gateway + HTTPRoute) — production only; enable in values-production.yaml
+# Gateway API (Gateway + HTTPRoute) — production creates Gateway; staging attaches to labgrid Base.
 gatewayApi:
   enabled: false
   gateway:
+    # When false, only HTTPRoutes are rendered (labgrid owns tranzrmoves-gateway).
+    create: true
     name: tranzr-gateway
     namespace: ""
     className: nginx
@@ -41,9 +43,13 @@ gatewayApi:
   routes:
     chatwoot:
       name: tranzr-chatwoot-route
+      namespace: ""
       hostname: chat.tranzzer.com
       serviceName: tranzr-moves-chatwoot
       servicePort: 3000
+      # Prod: https only (http listener has RequestRedirect). Staging NPM→:80 needs http too.
+      sectionNames:
+        - https
     httpRedirect:
       name: http-to-https-redirect
       hostnames:
@@ -57,6 +63,8 @@ gatewayApi:
       hostname: api.tranzzer.com
       serviceName: tranzr-gateway
       servicePort: 80
+      sectionNames:
+        - https
 
 # Deployments configuration
 deployments:

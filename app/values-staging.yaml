@@ -12,16 +12,40 @@ global:
 
 ingress:
   enabled: true
-  # Labgrid: nginx Ingress → tranzr-gateway. Annotations in values.yaml enable
-  # SignalR WebSocket timeouts + cookie affinity for /hubs/tracking.
+  # Dual-run: keep Ingress on .204 until NPM is flipped to Gateway .205, then disable.
 
 pgcluster:
   cluster:
     storage:
       storageClass: "synology-iscsi-delete-wffc"
 
+# Attach to labgrid Base Gateway listeners (http-tranzrmoves / https-tranzrmoves).
+# NGF creates one LB per Gateway — both wildcards share labgrid-gateway @ .205.
+# NPM: forward http://192.168.1.205:80, Force SSL off, Cloudflare Full.
 gatewayApi:
-  enabled: false
+  enabled: true
+  gateway:
+    create: false
+    name: labgrid-gateway
+    namespace: nginx-gateway
+  routes:
+    api:
+      hostname: api.tranzrmoves.com
+      serviceName: tranzr-gateway
+      servicePort: 80
+      sectionNames:
+        - http-tranzrmoves
+        - https-tranzrmoves
+    chatwoot:
+      hostname: chat.tranzrmoves.com
+      serviceName: tranzr-moves-staging-chatwoot
+      servicePort: 3000
+      sectionNames:
+        - http-tranzrmoves
+        - https-tranzrmoves
+    httpRedirect:
+      # Empty: HTTP→HTTPS redirect loops when NPM forwards to :80.
+      hostnames: []
 
 observability:
   environment: staging
