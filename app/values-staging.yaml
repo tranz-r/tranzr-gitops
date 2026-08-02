@@ -11,8 +11,8 @@ global:
   defaultStorageClass: "synology-iscsi-delete-wffc"
 
 ingress:
-  enabled: true
-  # Dual-run: keep Ingress on .204 until NPM is flipped to Gateway .205, then disable.
+  enabled: false
+  # Edge is Gateway API (labgrid-gateway @ 192.168.1.205) via NPM → http://.205:80.
 
 pgcluster:
   cluster:
@@ -71,7 +71,7 @@ chatwoot:
     create: false
     name: trm-stg
   ingress:
-    enabled: true
+    enabled: false
   # Enable internal bundled Postgres & Redis
   postgresql:
     enabled: true
