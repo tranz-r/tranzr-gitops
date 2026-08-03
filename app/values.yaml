@@ -65,6 +65,8 @@ gatewayApi:
       servicePort: 80
       sectionNames:
         - https
+      # NGF default client_max_body_size is 1m; API allows 15 MB for docs/photos.
+      clientMaxBodySize: "16m"
 
 # Deployments configuration
 deployments:
