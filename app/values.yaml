@@ -12,7 +12,7 @@ namespaceOverride: "tranzr-moves"
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.77.0"
+  movesVersion: "0.78.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.34.0"
@@ -193,6 +193,9 @@ deployments:
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
         secretKey: tranzr-azure-storage-connection-string
+      # Private blob containers (API CreateIfNotExists on first upload):
+      #   job-photos         — job pickup/dropoff photos
+      #   driver-compliance  — licence front/back + passport (Feature 23 / #91)
       - name: TURNSTILE_SECRET_KEY
         secretKey: cloudflare-turnstile-secret-key
       - name: WebPush__VapidPublicKey
