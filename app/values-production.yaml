@@ -3,6 +3,20 @@
 
 fullnameOverride: "trm-prod"
 
+# Apps use transaction pooler; migrators keep session via jobs.*.envFromSecrets.
+# Port / pool size are set here (not in AKV) and appended at container start.
+database:
+  appConnectionSecretKey: tranzr-supabase-transaction-database-connection-string
+  appConnectionPort: 6543
+  appMaximumPoolSize: 3
+
+externalSecrets:
+  additionalApplicationSecrets:
+    - secretKey: tranzr-supabase-transaction-database-connection-string
+      description: "Supabase transaction pooler connection string (apps)"
+      remoteRef:
+        key: tranzr-supabase-transaction-database-connection-string
+
 global:
   # Production cluster StorageClass (must exist on the prod cluster)
   defaultStorageClass: "hcloud-volumes"

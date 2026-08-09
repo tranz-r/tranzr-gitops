@@ -84,7 +84,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ $.Values.externalSecrets.name }}
-                  key: {{ .secretKey }}
+                  key: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
             {{- end }}
           {{- with .Values.deployments.workerScheduler.resources }}
           resources:
