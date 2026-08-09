@@ -308,7 +308,8 @@ deployments:
     autoscaling:
       enabled: true
       minReplicas: 2
-      maxReplicas: 10
+      # Cap under Supabase session pooler client limit (pool_size ~15) until Max Pool Size is tuned.
+      maxReplicas: 3
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
