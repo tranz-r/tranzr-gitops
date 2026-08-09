@@ -133,7 +133,8 @@ Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypo
 {{- $rabbitmq := .rabbitmq | default false -}}
 {{- $dbPort := $root.Values.database.appConnectionPort -}}
 {{- $dbPool := $root.Values.database.appMaximumPoolSize -}}
-{{- $augmentDb := or $dbPort $dbPool -}}
+{{- $dbNoReset := $root.Values.database.appNoResetOnClose -}}
+{{- $augmentDb := or $dbPort $dbPool $dbNoReset -}}
 {{- if or (and $root.Values.platformMessaging.enabled (or $redis $rabbitmq)) $augmentDb }}
 command: ["/bin/sh", "-c"]
 args:
@@ -145,14 +146,17 @@ args:
     export ConnectionStrings__rabbitmq="amqp://{{ $root.Values.platformMessaging.rabbitmq.username }}:${RABBITMQ_PASSWORD}@{{ $root.Values.platformMessaging.rabbitmq.host }}:{{ $root.Values.platformMessaging.rabbitmq.port }}"
     {{- end }}
     {{- if $augmentDb }}
-    # Keyword Npgsql form: apply chart overrides (production transaction pooler port / pool size).
+    # Keyword Npgsql form: apply chart overrides (production transaction pooler).
     _cs="${ConnectionStrings__TranzrMovesDatabaseConnection}"
-    _cs="$(printf '%s' "$_cs" | sed -E 's/;?[Pp]ort=[^;]*//g; s/;?[Mm]aximum [Pp]ool [Ss]ize=[^;]*//g; s/;?MaxPoolSize=[^;]*//g; s/;;+/;/g; s/^;//; s/;$//')"
+    _cs="$(printf '%s' "$_cs" | sed -E 's/;?[Pp]ort=[^;]*//g; s/;?[Mm]aximum [Pp]ool [Ss]ize=[^;]*//g; s/;?MaxPoolSize=[^;]*//g; s/;?[Nn]o [Rr]eset [Oo]n [Cc]lose=[^;]*//g; s/;;+/;/g; s/^;//; s/;$//')"
     {{- if $dbPort }}
     _cs="${_cs};Port={{ $dbPort }}"
     {{- end }}
     {{- if $dbPool }}
     _cs="${_cs};Maximum Pool Size={{ $dbPool }}"
+    {{- end }}
+    {{- if $dbNoReset }}
+    _cs="${_cs};No Reset On Close=true"
     {{- end }}
     export ConnectionStrings__TranzrMovesDatabaseConnection="${_cs}"
     {{- end }}
