@@ -123,7 +123,7 @@ Usage: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
 {{- end }}
 
 {{/*
-Assemble ConnectionStrings from cluster DNS + platform passwords, then exec dotnet.
+Assemble ConnectionStrings from cluster DNS + platform passwords, optional DB port/pool, then exec dotnet.
 Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" false) | nindent 10 }}
 */}}
 {{- define "tranzrmoves.platformMessagingStartup" -}}
@@ -131,15 +131,30 @@ Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypo
 {{- $entrypoint := .entrypoint -}}
 {{- $redis := .redis | default false -}}
 {{- $rabbitmq := .rabbitmq | default false -}}
-{{- if and $root.Values.platformMessaging.enabled (or $redis $rabbitmq) }}
+{{- $dbPort := $root.Values.database.appConnectionPort -}}
+{{- $dbPool := $root.Values.database.appMaximumPoolSize -}}
+{{- $augmentDb := or $dbPort $dbPool -}}
+{{- if or (and $root.Values.platformMessaging.enabled (or $redis $rabbitmq)) $augmentDb }}
 command: ["/bin/sh", "-c"]
 args:
   - |
-    {{- if $redis }}
+    {{- if and $root.Values.platformMessaging.enabled $redis }}
     export ConnectionStrings__redis="{{ $root.Values.platformMessaging.redis.host }}:{{ $root.Values.platformMessaging.redis.port }},password=${REDIS_PASSWORD}"
     {{- end }}
-    {{- if $rabbitmq }}
+    {{- if and $root.Values.platformMessaging.enabled $rabbitmq }}
     export ConnectionStrings__rabbitmq="amqp://{{ $root.Values.platformMessaging.rabbitmq.username }}:${RABBITMQ_PASSWORD}@{{ $root.Values.platformMessaging.rabbitmq.host }}:{{ $root.Values.platformMessaging.rabbitmq.port }}"
+    {{- end }}
+    {{- if $augmentDb }}
+    # Keyword Npgsql form: apply chart overrides (production transaction pooler port / pool size).
+    _cs="${ConnectionStrings__TranzrMovesDatabaseConnection}"
+    _cs="$(printf '%s' "$_cs" | sed -E 's/;?[Pp]ort=[^;]*//g; s/;?[Mm]aximum [Pp]ool [Ss]ize=[^;]*//g; s/;?MaxPoolSize=[^;]*//g; s/;;+/;/g; s/^;//; s/;$//')"
+    {{- if $dbPort }}
+    _cs="${_cs};Port={{ $dbPort }}"
+    {{- end }}
+    {{- if $dbPool }}
+    _cs="${_cs};Maximum Pool Size={{ $dbPool }}"
+    {{- end }}
+    export ConnectionStrings__TranzrMovesDatabaseConnection="${_cs}"
     {{- end }}
     exec dotnet {{ $entrypoint }}
 {{- end }}
