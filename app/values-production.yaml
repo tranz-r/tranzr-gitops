@@ -10,6 +10,9 @@ global:
 ingress:
   enabled: false
 
+# Production uses Gateway API (not Ingress). NGF upgrades WebSockets by default;
+# SignalR scale-out relies on Service sessionAffinity + Redis backplane on the API.
+
 pgcluster:
   cluster:
     storage:
@@ -25,9 +28,50 @@ deployments:
     replicaCount: 2
     env:
       - name: CHECKOUT_SESSION_SUCCESS_URL
-        value: "https://tranzr.co.uk/moves/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+        value: "https://tranzzer.com/moves/checkout/success?session_id={CHECKOUT_SESSION_ID}"
       - name: CHECKOUT_SESSION_CANCEL_URL
-        value: "https://tranzr.co.uk/moves/checkout/cancel"
+        value: "https://tranzzer.com/moves/checkout/cancel"
+      - name: BusinessPortal__QuoteJourneyBaseUrl
+        value: "https://tranzzer.com/moves"
+      - name: BusinessPortal__PortalBaseUrl
+        value: "https://portal.tranzzer.com"
+
+  workerProcessor:
+    env:
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzzer.com/moves/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzzer.com/moves/checkout/cancel"
+
+  workerScheduler:
+    quoteReminders:
+      FrontendBaseUrl: https://tranzzer.com
+    e2eDataPurge:
+      Enabled: false
+
+  gateway:
+    env:
+      - name: Cors__AllowedOrigins__0
+        value: "https://www.tranzzer.com"
+      - name: Cors__AllowedOrigins__1
+        value: "https://tranzzer.com"
+      - name: Cors__AllowedOrigins__2
+        value: "https://app.tranzzer.com"
+      - name: Cors__AllowedOrigins__3
+        value: "https://portal.tranzzer.com"
+      - name: Cors__AllowedOrigins__4
+        value: "https://admin.tranzzer.com"
+      - name: Cors__AllowedOrigins__5
+        value: "https://drivers.tranzzer.com"
+
+  notifications:
+    enabled: true
+
+jobs:
+  notificationsDbMigration:
+    enabled: true
+  internalApiCronjob:
+    enabled: false
 
 chatwoot:
   hooks:
@@ -52,6 +96,8 @@ chatwoot:
         storageClass: hcloud-volumes
 
   env:
-    FRONTEND_URL: "https://chat.tranzr.co.uk"
-    MAILER_SENDER_EMAIL: "noreply@tranzr.co.uk"
-    SMTP_DOMAIN: "tranzr.co.uk"
+    FRONTEND_URL: "https://chat.tranzzer.com"
+    MAILER_SENDER_EMAIL: "noreply@tranzzer.com"
+    SMTP_DOMAIN: "tranzzer.com"
+    BRAND_NAME: "Tranzzer Moves"
+    INSTALLATION_NAME: "Tranzzer Moves Chat"

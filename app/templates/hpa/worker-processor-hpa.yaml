@@ -1,0 +1,36 @@
+{{- if and .Values.deployments.workerProcessor.enabled .Values.deployments.workerProcessor.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.deployments.workerProcessor.name }}-hpa
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: worker-processor
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.deployments.workerProcessor.name }}
+  minReplicas: {{ .Values.deployments.workerProcessor.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.deployments.workerProcessor.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.deployments.workerProcessor.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.deployments.workerProcessor.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.deployments.workerProcessor.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.deployments.workerProcessor.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}

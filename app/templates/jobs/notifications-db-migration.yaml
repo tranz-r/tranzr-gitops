@@ -1,21 +1,21 @@
-{{- if .Values.jobs.dbMigration.enabled }}
+{{- if .Values.jobs.notificationsDbMigration.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "tranzrmoves.fullname" . }}-db-migration
+  name: {{ include "tranzrmoves.fullname" . }}-notifications-db-migration
   labels:
     {{- include "tranzrmoves.labels" . | nindent 4 }}
-    app.kubernetes.io/component: db-migration
+    app.kubernetes.io/component: notifications-db-migration
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-weight: "0"
+    helm.sh/hook-weight: "1"
 spec:
-  backoffLimit: {{ .Values.jobs.dbMigration.backoffLimit | default 3 }}
+  backoffLimit: {{ .Values.jobs.notificationsDbMigration.backoffLimit | default 3 }}
   template:
     metadata:
       labels:
         {{- include "tranzrmoves.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: db-migration
+        app.kubernetes.io/component: notifications-db-migration
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
     spec:
@@ -25,7 +25,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
-      restartPolicy: {{ .Values.jobs.dbMigration.restartPolicy }}
+      restartPolicy: {{ .Values.jobs.notificationsDbMigration.restartPolicy }}
       {{- with .Values.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}
@@ -42,8 +42,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      
-      # Init container to check PostgreSQL connectivity
+
       initContainers:
         - name: postgresql-connectivity-check
           image: postgres:15-alpine
@@ -74,15 +73,12 @@ spec:
                   key: {{ .secretKey }}
             {{- end }}
           resources:
-            {{- toYaml .Values.jobs.dbMigration.initContainer.resources | nindent 12 }}
-      
-      # Main migration container
+            {{- toYaml .Values.jobs.notificationsDbMigration.initContainer.resources | nindent 12 }}
+
       containers:
-        - name: db-migrator
-          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "dbMigrator") | quote }}
+        - name: notifications-db-migrator
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "notificationsDbMigrator") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
-          
-          # Environment variables for database connection
           {{- if or .Values.jobs.dbMigration.env .Values.jobs.dbMigration.envFromSecrets }}
           env:
             {{- range .Values.jobs.dbMigration.env }}
@@ -97,12 +93,10 @@ spec:
                   key: {{ .secretKey }}
             {{- end }}
           {{- end }}
-          
           resources:
-            {{- toYaml .Values.jobs.dbMigration.resources | nindent 12 }}
-          
+            {{- toYaml .Values.jobs.notificationsDbMigration.resources | nindent 12 }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-{{- end }} 
+{{- end }}

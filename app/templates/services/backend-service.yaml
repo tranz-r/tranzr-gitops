@@ -11,6 +11,13 @@ metadata:
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.services.backend.type }}
+  {{- with .Values.services.backend.sessionAffinity }}
+  sessionAffinity: {{ . }}
+  {{- end }}
+  {{- with .Values.services.backend.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ .Values.services.backend.port }}
       targetPort: {{ .Values.services.backend.targetPort }}
@@ -20,4 +27,4 @@ spec:
     app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: backend
-{{- end }} 
+{{- end }}

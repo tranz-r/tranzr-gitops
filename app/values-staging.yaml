@@ -11,22 +11,67 @@ global:
   defaultStorageClass: "synology-iscsi-delete-wffc"
 
 ingress:
-  enabled: true
+  enabled: false
+  # Edge is Gateway API (labgrid-gateway @ 192.168.1.205) via NPM → http://.205:80.
 
 pgcluster:
   cluster:
     storage:
       storageClass: "synology-iscsi-delete-wffc"
 
+# Attach to labgrid Base Gateway listeners (http-tranzrmoves / https-tranzrmoves).
+# NGF creates one LB per Gateway — both wildcards share labgrid-gateway @ .205.
+# NPM: forward http://192.168.1.205:80, Force SSL off, Cloudflare Full.
 gatewayApi:
-  enabled: false
+  enabled: true
+  gateway:
+    create: false
+    name: labgrid-gateway
+    namespace: nginx-gateway
+  routes:
+    api:
+      hostname: api.tranzrmoves.com
+      serviceName: tranzr-gateway
+      servicePort: 80
+      sectionNames:
+        - http-tranzrmoves
+        - https-tranzrmoves
+    chatwoot:
+      hostname: chat.tranzrmoves.com
+      serviceName: tranzr-moves-staging-chatwoot
+      servicePort: 3000
+      sectionNames:
+        - http-tranzrmoves
+        - https-tranzrmoves
+    httpRedirect:
+      # Empty: HTTP→HTTPS redirect loops when NPM forwards to :80.
+      hostnames: []
+
+observability:
+  environment: staging
+
+# Platform Redis/RabbitMQ: redis-system / rabbitmq-system on labgrid (same as hetzner-k3s production).
+# Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
+
+deployments:
+  workerScheduler:
+    e2eDataPurge:
+      Enabled: true
+  notifications:
+    enabled: true
+
+jobs:
+  notificationsDbMigration:
+    enabled: true
+  internalApiCronjob:
+    enabled: false
 
 chatwoot:
   serviceAccount:
     create: false
     name: trm-stg
   ingress:
-    enabled: true
+    enabled: false
   # Enable internal bundled Postgres & Redis
   postgresql:
     enabled: true

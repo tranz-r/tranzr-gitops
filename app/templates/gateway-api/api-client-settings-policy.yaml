@@ -1,0 +1,18 @@
+{{- if and .Values.gatewayApi.enabled .Values.gatewayApi.routes.api }}
+{{- $r := .Values.gatewayApi.routes.api }}
+{{- $routeNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $r.namespace }}
+{{- $bodyMax := default "16m" .Values.gatewayApi.routes.api.clientMaxBodySize }}
+# Align edge body limit with API compliance/job photo caps (15 MB). NGF default is 1m.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ClientSettingsPolicy
+metadata:
+  name: {{ printf "%s-upload-body-size" $r.name }}
+  namespace: {{ $routeNamespace }}
+spec:
+  targetRef:
+    group: gateway.networking.k8s.io
+    kind: HTTPRoute
+    name: {{ $r.name }}
+  body:
+    maxSize: {{ $bodyMax | quote }}
+{{- end }}

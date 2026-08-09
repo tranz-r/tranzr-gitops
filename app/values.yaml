@@ -9,36 +9,64 @@ global:
 # Namespace override
 namespaceOverride: "tranzr-moves"
 
-# Gateway API (Gateway + HTTPRoute) — production only; enable in values-production.yaml
+# Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
+images:
+  pullPolicy: IfNotPresent
+  movesVersion: "0.90.0"
+  gateway:
+    repository: ghcr.io/tranz-r/api-gateway
+    tag: "0.35.0"
+  movesServices:
+    repository: ghcr.io/tranz-r/tranzr-moves-services
+  movesWorker:
+    repository: ghcr.io/tranz-r/tranzr-moves-worker
+  dbMigrator:
+    repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
+  notifications:
+    repository: ghcr.io/tranz-r/tranzr-moves-notifications
+  notificationsDbMigrator:
+    repository: ghcr.io/tranz-r/notifications-db-migrator
+
+# Gateway API (Gateway + HTTPRoute) — production creates Gateway; staging attaches to labgrid Base.
 gatewayApi:
   enabled: false
   gateway:
+    # When false, only HTTPRoutes are rendered (labgrid owns tranzrmoves-gateway).
+    create: true
     name: tranzr-gateway
     namespace: ""
     className: nginx
     clusterIssuer: tranzr-letsencrypt-production
     # Hostname pattern for both HTTP and HTTPS listeners (e.g. wildcard)
-    hostname: "*.tranzr.co.uk"
+    hostname: "*.tranzzer.com"
     tlsSecretName: tranzr-wildcard-tls
   routes:
     chatwoot:
       name: tranzr-chatwoot-route
-      hostname: chat.tranzr.co.uk
+      namespace: ""
+      hostname: chat.tranzzer.com
       serviceName: tranzr-moves-chatwoot
       servicePort: 3000
+      # Prod: https only (http listener has RequestRedirect). Staging NPM→:80 needs http too.
+      sectionNames:
+        - https
     httpRedirect:
       name: http-to-https-redirect
       hostnames:
-        - api.tranzr.co.uk
-        - gateway.tranzr.co.uk
+        - api.tranzzer.com
+        - gateway.tranzzer.com
       # 301/302: many clients follow redirects with GET (POST body dropped). 308 preserves method+body.
       redirectStatusCode: 308
     api:
       name: tranzr-api
       namespace: ""
-      hostname: api.tranzr.co.uk
+      hostname: api.tranzzer.com
       serviceName: tranzr-gateway
       servicePort: 80
+      sectionNames:
+        - https
+      # NGF default client_max_body_size is 1m; API allows 15 MB for docs/photos.
+      clientMaxBodySize: "16m"
 
 # Deployments configuration
 deployments:
@@ -46,10 +74,7 @@ deployments:
     name: tranzr-gateway
     enabled: true
     replicaCount: 1
-    image:
-      repository: ghcr.io/tranz-r/api-gateway
-      pullPolicy: IfNotPresent
-      tag: "0.20.0"
+    # image: see images.gateway
 
     # Container port configuration
     containerPort: 8080
@@ -67,23 +92,27 @@ deployments:
       - name: Cors__AllowedOrigins__1
         value: "https://tranzrmoves.com"
       - name: Cors__AllowedOrigins__2
-        value: "https://www.tranzrgroup.com"
+        value: "https://app.tranzrmoves.com"
       - name: Cors__AllowedOrigins__3
-        value: "https://tranzrgroup.com"
+        value: "https://portal.tranzrmoves.com"
+      - name: Cors__AllowedOrigins__4
+        value: "https://admin.tranzrmoves.com"
+      - name: Cors__AllowedOrigins__5
+        value: "https://drivers.tranzrmoves.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
-      - name: SUPER_BASE_PROJECT_ID
-        secretKey: supabase-project-id
+      - name: SUPABASE_JWT_ISSUER
+        secretKey: supabase-jwt-issuer
 
     # Resource configuration
     resources:
       requests:
         cpu: 500m
-        memory: 512Mi
+        memory: 256Mi
       limits:
         cpu: 1000m
-        memory: 1Gi
+        memory: 512Mi
 
     # Probes configuration
     livenessProbe:
@@ -112,10 +141,7 @@ deployments:
     name: tranzr-service
     enabled: true
     replicaCount: 1
-    image:
-      repository: ghcr.io/tranz-r/tranzr-moves-services
-      pullPolicy: IfNotPresent
-      tag: "0.26.1"
+    # image: see images.movesServices + images.movesVersion
 
     # Container port configuration
     containerPort: 8080
@@ -130,22 +156,24 @@ deployments:
         value: "production"
       - name: CACHE_TTL
         value: "300"
-      - name: AWS_SES_SMTP_PORT
-        value: "587"
       - name: FROM_EMAIL
         value: "bookings@tranzrmoves.com"
       - name: FROM_NAME
-        value: "Tranzr Moves"
-      - name: AWS_DEFAULT_REGION
-        value: "eu-west-2"
-      - name: AWS_REGION
-        value: "eu-west-2"
+        value: "Tranzzer Moves"
       - name: MAPBOX_BASE_URL
         value: "https://api.mapbox.com"
       - name: CHECKOUT_SESSION_SUCCESS_URL
         value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
       - name: CHECKOUT_SESSION_CANCEL_URL
         value: "https://tranzrmoves.com/checkout/cancel"
+      - name: Notifications__UseDurableMessaging
+        value: "true"
+      - name: BusinessPortal__QuoteJourneyBaseUrl
+        value: "https://tranzrmoves.com/moves"
+      - name: BusinessPortal__PortalBaseUrl
+        value: "https://portal.tranzrmoves.com"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
@@ -153,20 +181,29 @@ deployments:
         secretKey: tranzr-stripe-api-key
       - name: SUPABASE_URL
         secretKey: supabase-url
-      - name: SUPABASE_KEY
-        secretKey: supabase-key
-      - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET
-        secretKey: tranzr-stripe-webhook-signing-secret
+      - name: SUPABASE_JWT_ISSUER
+        secretKey: supabase-jwt-issuer
+      - name: SUPABASE_SECRET_KEY
+        secretKey: supabase-secret-key
+      - name: BUSINESS_PORTAL_INVITE_REDIRECT_URL
+        secretKey: business-portal-invite-redirect-url
+      - name: TRANZR_STRIPE_WEBHOOK_SIGNING_SECRET_V2
+        secretKey: tranzr-stripe-webhook-signing-secret-v2
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
       - name: MAPBOX_TOKEN
         secretKey: mapbox-token
       - name: AZURE_STORAGE_CONNECTION_STRING
         secretKey: tranzr-azure-storage-connection-string
-      - name: COMMUNICATION_SERVICES_CONNECTION_STRING
-        secretKey: tranzr-communication-services-connection-string
+      # Private blob containers (API CreateIfNotExists on first upload):
+      #   job-photos         — job pickup/dropoff photos
+      #   driver-compliance  — licence front/back + passport (Feature 23 / #91)
       - name: TURNSTILE_SECRET_KEY
         secretKey: cloudflare-turnstile-secret-key
+      - name: WebPush__VapidPublicKey
+        secretKey: tranzr-webpush-vapid-public-key
+      - name: WebPush__VapidPrivateKey
+        secretKey: tranzr-webpush-vapid-private-key
 
     # Resource configuration
     resources:
@@ -199,6 +236,123 @@ deployments:
       maxReplicas: 15
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
+
+  workerScheduler:
+    name: tranzr-moves-worker-scheduler
+    enabled: true
+    replicaCount: 1
+    # image: see images.movesWorker + images.movesVersion
+    # Keys match .NET property names; template emits PayLater__* / QuoteReminders__* / E2eDataPurge__* env vars.
+    payLater:
+      RecoveryIntervalMinutes: 90
+      UseDurableMessaging: true
+      DepositChargeTimeZone: Europe/London
+    quoteReminders:
+      Enabled: true
+      ScanIntervalMinutes: 60
+      IdleHoursBeforeReminder: 24
+      ReminderCooldownDays: 7
+      FrontendBaseUrl: https://tranzrmoves.com
+      ResumeTokenLifetimeDays: 30
+      SendRemindersForBusinessQuotes: false
+    # Staging enables this in values-staging.yaml. Keep false in production.
+    e2eDataPurge:
+      Enabled: false
+      RunAtHour: 2
+      RunAtMinute: 0
+      TimeZoneId: Europe/London
+      MinAgeHours: 6
+      CreatedByValues:
+        - e2e
+      EmailDomain: tranzrmoves.com
+      DryRun: false
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 256Mi
+    autoscaling:
+      enabled: false
+
+  workerProcessor:
+    name: tranzr-moves-worker-processor
+    enabled: true
+    replicaCount: 2
+    # image: see images.movesWorker + images.movesVersion
+    payLater:
+      UseDurableMessaging: true
+    env:
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzrmoves.com/checkout/cancel"
+      - name: Notifications__UseDurableMessaging
+        value: "true"
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+      - name: STRIPE_API_KEY
+        secretKey: tranzr-stripe-api-key
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 768Mi
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+  notifications:
+    name: tranzr-moves-notifications
+    enabled: true
+    replicaCount: 1
+    # image: see images.notifications + images.movesVersion
+    containerPort: 8080
+    env:
+      - name: Notifications__EmailProvider
+        value: Acs
+      - name: Notifications__UseDurableMessaging
+        value: "true"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+      - name: COMMUNICATION_SERVICES_CONNECTION_STRING
+        secretKey: tranzr-communication-services-connection-string
+      - name: WebPush__VapidPublicKey
+        secretKey: tranzr-webpush-vapid-public-key
+      - name: WebPush__VapidPrivateKey
+        secretKey: tranzr-webpush-vapid-private-key
+    resources:
+      requests:
+        cpu: 500m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 512Mi
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: http
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /healthz
+        port: http
+      initialDelaySeconds: 15
+      periodSeconds: 15
 
 # Image pull secrets configuration
 imagePullSecrets:
@@ -234,6 +388,12 @@ services:
     port: 80
     targetPort: 8080
     protocol: TCP
+    # Stick clients to one gateway pod so SignalR negotiate + transport stay aligned
+    # (YARP then sees a stable source IP toward the backend Service).
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
 
   backend:
     name: tranzr-service
@@ -241,8 +401,23 @@ services:
     port: 80
     targetPort: 8080
     protocol: TCP
+    # SignalR connection state is per-pod; affinity + Redis backplane cover scale-out.
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 10800
 
-# Ingress configuration
+  notifications:
+    name: tranzr-moves-notifications
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+
+# Ingress configuration (staging / labgrid — production uses Gateway API instead).
+# ingress-nginx upgrades WebSockets when Upgrade/Connection headers are present;
+# long timeouts + cookie affinity keep SignalR negotiate + transport on one gateway pod.
+# See: https://kubernetes.github.io/ingress-nginx/user-guide/miscellaneous/websocket/
 ingress:
   enabled: false
   className: "nginx"
@@ -251,6 +426,19 @@ ingress:
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    # SignalR / WebSocket (TrackingHub at /hubs/tracking)
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+    nginx.ingress.kubernetes.io/session-cookie-name: "tranzr-api-sticky"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "172800"
+    nginx.ingress.kubernetes.io/session-cookie-samesite: "Lax"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
   hosts:
     - host: api.tranzrmoves.com
       paths:
@@ -262,6 +450,27 @@ ingress:
     # - secretName: tranzr-gateway-tls
     #   hosts:
     #     - api.tranzrmoves.com
+
+# OpenTelemetry export to in-cluster Grafana Alloy (monitoring-system).
+observability:
+  enabled: true
+  otlpEndpoint: http://monitoring-alloy.monitoring-system.svc.cluster.local:4317
+  otlpProtocol: grpc
+  environment: production
+
+# Platform Redis/RabbitMQ — cluster DNS in redis-system / rabbitmq-system (see hetzner-k3s / labgrid).
+# RabbitMQ is a 3-node RabbitmqCluster (quorum DQT); Wolverine uses UseQuorumQueues() for app queues.
+# Passwords only: platform-redis-password / platform-rabbitmq-password (same AKV keys as platform charts).
+# Connection strings are assembled at container start from these hosts + synced passwords.
+platformMessaging:
+  enabled: true
+  redis:
+    host: redis.redis-system.svc.cluster.local
+    port: 6379
+  rabbitmq:
+    host: rabbitmq.rabbitmq-system.svc.cluster.local
+    port: 5672
+    username: admin
 
 # Consolidated External Secrets configuration
 externalSecrets:
@@ -283,29 +492,30 @@ externalSecrets:
   # Application secrets - add all your application secrets here
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
-    # Gateway secrets - currently none configured
-    - secretKey: supabase-project-id
-      description: "Supabase project ID"
-      remoteRef:
-        key: supabase-project-id
-
     # Backend secrets
     - secretKey: tranzr-stripe-api-key
       description: "Stripe API key for payment processing"
       remoteRef:
         key: tranzr-stripe-api-key
+
+    # Supabase Secrets
     - secretKey: supabase-url
       description: "Supabase database URL"
       remoteRef:
         key: supabase-url
-    - secretKey: supabase-key
-      description: "Supabase service key"
+    - secretKey: supabase-jwt-issuer
+      description: "Supabase JWT issuer"
       remoteRef:
-        key: supabase-key
-    - secretKey: tranzr-stripe-webhook-signing-secret
-      description: "Stripe webhook signing secret"
+        key: supabase-jwt-issuer
+    - secretKey: supabase-secret-key
+      description: "Supabase secret key"
       remoteRef:
-        key: tranzr-stripe-webhook-signing-secret
+        key: supabase-secret-key
+
+    - secretKey: tranzr-stripe-webhook-signing-secret-v2
+      description: "Stripe webhook signing secret for staging (or rotation)"
+      remoteRef:
+        key: tranzr-stripe-webhook-signing-secret-v2
     - secretKey: mapbox-token
       description: "Mapbox token"
       remoteRef:
@@ -323,6 +533,19 @@ externalSecrets:
       remoteRef:
         key: cloudflare-turnstile-secret-key
 
+    # Web Push VAPID (Drivers Portal assignment alerts)
+    # Create in Azure Key Vault before sync:
+    #   az keyvault secret set --vault-name <vault> --name tranzr-webpush-vapid-public-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-webpush-vapid-private-key --value '...'
+    - secretKey: tranzr-webpush-vapid-public-key
+      description: "Web Push VAPID public key (Drivers Portal)"
+      remoteRef:
+        key: tranzr-webpush-vapid-public-key
+    - secretKey: tranzr-webpush-vapid-private-key
+      description: "Web Push VAPID private key (Drivers Portal) — sensitive"
+      remoteRef:
+        key: tranzr-webpush-vapid-private-key
+
     # Database secrets
     - secretKey: tranzr-supabase-database-connection-string
       description: "PostgreSQL database connection string"
@@ -332,6 +555,21 @@ externalSecrets:
       description: "PostgreSQL database host"
       remoteRef:
         key: tranzr-supabase-database-host
+
+    # Platform Redis/RabbitMQ passwords (same AKV keys as hetzner-k3s / labgrid platform charts)
+    - secretKey: platform-redis-password
+      description: "Platform Redis password"
+      remoteRef:
+        key: platform-redis-password
+    - secretKey: platform-rabbitmq-password
+      description: "Platform RabbitMQ password"
+      remoteRef:
+        key: platform-rabbitmq-password
+
+    - secretKey: business-portal-invite-redirect-url
+      description: "Business portal invite redirect URL"
+      remoteRef:
+        key: business-portal-invite-redirect-url
 
 # Node selector, tolerations, and affinity
 nodeSelector: {}
@@ -356,10 +594,7 @@ jobs:
   dbMigration:
     enabled: true
     backoffLimit: 3
-    image:
-      repository: ghcr.io/tranz-r/tranzr-moves-db-migrator
-      pullPolicy: IfNotPresent
-      tag: "0.26.1" # Should match the backend service version
+    # image: see images.dbMigrator + images.movesVersion
     restartPolicy: Never
     database:
       port: 5432
@@ -399,6 +634,27 @@ jobs:
       - name: TRANZR_SUPABASE_DATABASE_HOST
         secretKey: tranzr-supabase-database-host
 
+  notificationsDbMigration:
+    enabled: true
+    backoffLimit: 3
+    restartPolicy: Never
+    # Uses jobs.dbMigration.env and envFromSecrets (same Postgres database)
+    initContainer:
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
   internalApiCronjob:
     enabled: true
     schedule: "*/10 * * * *" # Every 10 minutes
@@ -426,8 +682,14 @@ jobs:
         memory: 128Mi
 
 # Additional volumes and volume mounts
-volumes: []
-volumeMounts: []
+# A writable temp dir is required under the read-only root filesystem so that
+# Chromium (server-side confirmation PDF rendering) can create its profile.
+volumes:
+  - name: tmp
+    emptyDir: {}
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
 
 chatwoot:
   # Enable internal bundled Postgres & Redis
@@ -482,8 +744,8 @@ chatwoot:
     AZURE_STORAGE_CONTAINER: "chatwoot"
     AZURE_STORAGE_ACCOUNT_NAME: "tranzrmovessa"
 
-    BRAND_NAME: "Tranzr Moves"
-    INSTALLATION_NAME: "Tranzr Moves Chat"
+    BRAND_NAME: "Tranzzer Moves"
+    INSTALLATION_NAME: "Tranzzer Moves Chat"
 
   # Internal service configuration (ClusterIP)
   services:

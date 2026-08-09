@@ -3,6 +3,13 @@
 {{- $r := .Values.gatewayApi.routes.api }}
 {{- $gatewayNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $g.namespace }}
 {{- $routeNamespace := default (.Release.Namespace | default .Values.namespaceOverride) $r.namespace }}
+{{- $sectionNames := default (list "https") $r.sectionNames }}
+# Production edge: Gateway API (NGINX Gateway Fabric).
+# WebSocket upgrades for SignalR (/hubs/tracking) are supported by default when the
+# client sends Upgrade/Connection headers — no extra HTTPRoute match is required.
+# See: https://docs.nginx.com/nginx-gateway-fabric/traffic-management/basic-routing/
+# Sticky ClientIP on tranzr-gateway / tranzr-service + Redis SignalR backplane cover multi-replica.
+# Staging behind NPM → :80 needs sectionNames including http (see values-staging.yaml).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -10,9 +17,11 @@ metadata:
   namespace: {{ $routeNamespace }}
 spec:
   parentRefs:
+{{- range $sectionNames }}
     - name: {{ $g.name }}
       namespace: {{ $gatewayNamespace }}
-      sectionName: https
+      sectionName: {{ . }}
+{{- end }}
   hostnames:
     - {{ $r.hostname | quote }}
   rules:

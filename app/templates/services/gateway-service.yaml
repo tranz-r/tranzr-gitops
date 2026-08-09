@@ -11,6 +11,13 @@ metadata:
     {{- include "tranzrmoves.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.services.gateway.type }}
+  {{- with .Values.services.gateway.sessionAffinity }}
+  sessionAffinity: {{ . }}
+  {{- end }}
+  {{- with .Values.services.gateway.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   ports:
     - port: {{ .Values.services.gateway.port }}
       targetPort: {{ .Values.services.gateway.targetPort }}
@@ -20,4 +27,4 @@ spec:
     app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-gateway
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: gateway
-{{- end }} 
+{{- end }}

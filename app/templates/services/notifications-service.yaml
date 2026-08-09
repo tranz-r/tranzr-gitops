@@ -1,0 +1,23 @@
+{{- if .Values.deployments.notifications.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.notifications.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-notifications
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: notifications
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.services.notifications.type }}
+  ports:
+    - port: {{ .Values.services.notifications.port }}
+      targetPort: {{ .Values.services.notifications.targetPort }}
+      protocol: {{ .Values.services.notifications.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-notifications
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: notifications
+{{- end }}
