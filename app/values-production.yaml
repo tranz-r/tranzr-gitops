@@ -4,11 +4,12 @@
 fullnameOverride: "trm-prod"
 
 # Apps use transaction pooler; migrators keep session via jobs.*.envFromSecrets.
-# Port / pool size are set here (not in AKV) and appended at container start.
+# Port / pool size / No Reset On Close are set here (not in AKV) and appended at container start.
 database:
   appConnectionSecretKey: tranzr-supabase-transaction-database-connection-string
   appConnectionPort: 6543
   appMaximumPoolSize: 3
+  appNoResetOnClose: true
 
 externalSecrets:
   additionalApplicationSecrets:

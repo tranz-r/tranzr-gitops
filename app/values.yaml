@@ -12,11 +12,13 @@ namespaceOverride: "tranzr-moves"
 # App Postgres connection (ExternalSecret key → ConnectionStrings__TranzrMovesDatabaseConnection).
 # Staging: session pooler. Production overrides to transaction pooler (see values-production.yaml).
 # Migrators always use tranzr-supabase-database-connection-string (session) via jobs.*.envFromSecrets.
-# Optional port / pool size are appended at container start (keyword Npgsql strings); leave null to use the secret as-is.
+# Optional Npgsql keywords appended at container start; leave null/false to use the secret as-is.
 database:
   appConnectionSecretKey: tranzr-supabase-database-connection-string
   appConnectionPort: null
   appMaximumPoolSize: null
+  # Required for Supabase/PgBouncer transaction mode (avoids DISCARD ALL in a transaction).
+  appNoResetOnClose: false
 
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
