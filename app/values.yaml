@@ -9,6 +9,12 @@ global:
 # Namespace override
 namespaceOverride: "tranzr-moves"
 
+# App Postgres connection (ExternalSecret key → ConnectionStrings__TranzrMovesDatabaseConnection).
+# Staging: session pooler. Production overrides to transaction pooler (see values-production.yaml).
+# Migrators always use tranzr-supabase-database-connection-string (session) via jobs.*.envFromSecrets.
+database:
+  appConnectionSecretKey: tranzr-supabase-database-connection-string
+
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
@@ -490,6 +496,9 @@ externalSecrets:
   # Create separate image pull secret (dockerconfigjson type)
   createImagePullSecret: true
 
+  # Prod-only extras (merged into ExternalSecret). Staging leaves this empty.
+  additionalApplicationSecrets: []
+
   # Application secrets - add all your application secrets here
   # Simple direct mapping from Azure Key Vault to Kubernetes secret
   applicationSecrets:
@@ -547,9 +556,9 @@ externalSecrets:
       remoteRef:
         key: tranzr-webpush-vapid-private-key
 
-    # Database secrets
+    # Database secrets (session pooler — migrators; staging apps)
     - secretKey: tranzr-supabase-database-connection-string
-      description: "PostgreSQL database connection string"
+      description: "PostgreSQL session pooler connection string (migrations; staging apps)"
       remoteRef:
         key: tranzr-supabase-database-connection-string
     - secretKey: tranzr-supabase-database-host

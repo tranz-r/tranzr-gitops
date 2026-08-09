@@ -108,6 +108,21 @@ Usage: {{ include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "red
 {{- end }}
 
 {{/*
+K8s secret key for app DB ConnectionStrings__TranzrMovesDatabaseConnection.
+Staging defaults to session pooler; production overrides to transaction pooler.
+Usage: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
+*/}}
+{{- define "tranzrmoves.appDatabaseSecretKey" -}}
+{{- $root := .root -}}
+{{- $item := .item -}}
+{{- if eq $item.name "ConnectionStrings__TranzrMovesDatabaseConnection" -}}
+{{- $root.Values.database.appConnectionSecretKey -}}
+{{- else -}}
+{{- $item.secretKey -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Assemble ConnectionStrings from cluster DNS + platform passwords, then exec dotnet.
 Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" false) | nindent 10 }}
 */}}
