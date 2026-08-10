@@ -278,6 +278,73 @@ helm upgrade tranzrmoves ./Apps/charts/tranzrmoves \
 helm rollback tranzrmoves 1 --namespace tranzrmoves
 ```
 
+## Production Postgres (Hetzner) — Supabase poolers
+
+Staging (labgrid) and production (Hetzner) use **different Azure Key Vaults** (`labgrid` vs `tranzr-moves`) but the same chart. Pooler mode differs only on production.
+
+### Which connection goes where
+
+| Workload | Env | AKV secret | Pooler | Port |
+|---|---|---|---|---|
+| Apps (backend, workers, notifications) | **Production** | `tranzr-supabase-transaction-database-connection-string` | Transaction | **6543** (set in Helm) |
+| Migrators | Production | `tranzr-supabase-database-connection-string` | Session | 5432 |
+| Apps + migrators | Staging | `tranzr-supabase-database-connection-string` | Session | 5432 |
+
+Use the **pooler** hostname (`*.pooler.supabase.com`), not the direct DB host (`db.<project>.supabase.co`). Direct hosts often resolve IPv6-only; Hetzner pods are effectively IPv4 for egress and fail with `Network is unreachable`.
+
+Keyword Npgsql form in AKV (port optional for prod apps — Helm appends it):
+
+```text
+Host=aws-….pooler.supabase.com;Database=postgres;Username=postgres.<project-ref>;Password=…;SSL Mode=Require
+```
+
+### Helm overrides (`database.*`)
+
+Defined in `values.yaml`, overridden in `values-production.yaml`. Applied at container start by `tranzrmoves.platformMessagingStartup` in `templates/_helpers.tpl` (appends to `ConnectionStrings__TranzrMovesDatabaseConnection`).
+
+| Value | Production | Purpose |
+|---|---|---|
+| `appConnectionSecretKey` | transaction secret key | Which K8s/AKV secret apps mount |
+| `appConnectionPort` | `6543` | Transaction pooler port |
+| `appMaximumPoolSize` | `3` | Cap Npgsql pool per process under shared limits |
+| `appNoResetOnClose` | `true` | See below |
+
+Staging leaves port/pool/`No Reset On Close` unset/false so the session connection string is used as-is.
+
+Worker processor HPA on production is capped (`maxReplicas: 3`) so replica count × pool size stays within Supabase client limits.
+
+### `No Reset On Close=true` — what / why / where
+
+**What it means:** Npgsql keyword that disables the client’s connection reset when a connection is returned to the pool. Without it, Npgsql runs `DISCARD ALL` (and related reset) to clear session state for the next borrower.
+
+**Why we set it on production apps:** Supabase **transaction** mode (PgBouncer transaction pooling) does not allow session reset commands the way a normal Postgres session does. With `Port=6543`, Npgsql’s default reset hits:
+
+`DISCARD ALL cannot run inside a transaction block`
+
+That crash-looped `tranzr-service` after switching apps to the transaction pooler. `No Reset On Close=true` skips that reset so apps can use transaction mode.
+
+**Where it is applied:**
+
+- **Enabled only in production:** `values-production.yaml` → `database.appNoResetOnClose: true`
+- **Appended at pod start** for backend, worker-processor, worker-scheduler, and notifications (same startup helper that adds `Port` / `Maximum Pool Size`)
+- **Not** written into AKV; **not** used on staging; **not** applied to migrators (they stay on session pooler)
+
+**Trade-off:** do not rely on leftover session state across pooled borrows (temp tables, `SET`, session advisories, etc.). That matches transaction pooling expectations.
+
+### Refreshing AKV changes on the cluster
+
+ExternalSecret refresh is hourly. To pick up a Key Vault edit sooner:
+
+```bash
+kubectl --context tranzr-hetzner -n tranzr-moves-system \
+  annotate externalsecret tranzrmoves-secrets force-sync="$(date +%s)" --overwrite
+kubectl --context tranzr-hetzner -n tranzr-moves-system \
+  rollout restart deploy/tranzr-service deploy/tranzr-moves-worker-processor \
+  deploy/tranzr-moves-worker-scheduler deploy/tranzr-moves-notifications
+```
+
+Env vars from secrets are fixed at pod start — restart after sync.
+
 ## Uninstallation
 
 ```bash

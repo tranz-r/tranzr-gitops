@@ -17,7 +17,8 @@ database:
   appConnectionSecretKey: tranzr-supabase-database-connection-string
   appConnectionPort: null
   appMaximumPoolSize: null
-  # Required for Supabase/PgBouncer transaction mode (avoids DISCARD ALL in a transaction).
+  # Prod apps only (values-production): Npgsql + Supabase transaction pooler.
+  # See app/README.md § "No Reset On Close=true". Default false for staging/session.
   appNoResetOnClose: false
 
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
