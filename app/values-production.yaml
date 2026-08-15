@@ -51,6 +51,12 @@ deployments:
       - name: BusinessPortal__PortalBaseUrl
         value: "https://portal.tranzzer.com"
 
+  whisperStt:
+    replicaCount: 2
+    autoscaling:
+      minReplicas: 2
+      maxReplicas: 5
+
   workerProcessor:
     env:
       - name: CHECKOUT_SESSION_SUCCESS_URL

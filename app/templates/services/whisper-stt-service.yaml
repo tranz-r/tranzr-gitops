@@ -1,0 +1,23 @@
+{{- if .Values.deployments.whisperStt.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.whisperStt.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: whisper-stt
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.services.whisperStt.type }}
+  ports:
+    - port: {{ .Values.services.whisperStt.port }}
+      targetPort: {{ .Values.services.whisperStt.targetPort }}
+      protocol: {{ .Values.services.whisperStt.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: whisper-stt
+{{- end }}
