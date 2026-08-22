@@ -1,6 +1,6 @@
 dependencies:
 - name: chatwoot
   repository: https://chatwoot.github.io/charts
-  version: 2.0.21
-digest: sha256:69a7de75f44b048f9d0ee0c1655521d08d2a5aa045f9c3006f5cd24c35ef412c
-generated: "2026-04-02T14:59:17.902987074+01:00"
+  version: 2.0.24
+digest: sha256:ead3a8a390037403cb575877c12fa619b15ff177218817e5c20ab71f11c85971
+generated: "2026-08-22T08:10:57.845402214+01:00"
