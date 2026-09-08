@@ -6,6 +6,12 @@
 global:
   defaultStorageClass: "synology-iscsi-delete-wffc"
 
+# Runtime feature switches. Keep customer-facing pricing changes disabled by
+# default; environment overrides opt in explicitly.
+features:
+  movesCalendarPricingV3:
+    enabled: false
+
 # Namespace override
 namespaceOverride: "tranzr-moves"
 
@@ -24,7 +30,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.97.6"
+  movesVersion: "0.98.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.35.0"

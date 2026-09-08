@@ -129,6 +129,26 @@ helm install tranzrmoves ./Apps/charts/tranzrmoves \
 
 ## Configuration
 
+### Calendar pricing v3 rollout
+
+Calendar pricing v3 is controlled by one environment-scoped Helm value:
+
+```yaml
+features:
+  movesCalendarPricingV3:
+    enabled: false
+```
+
+The default is `false`, which keeps the legacy Removal pricing strategy in
+place. Staging overrides the value to `true`; production inherits `false`.
+The backend deployment maps the switch to `MovesPricing__Enabled` and the
+three Calendar pricing capability flags without replacing the existing
+`deployments.backend.env` list.
+
+To roll back staging, set the staging override to `false` and let Argo CD
+resync. The Web Quote and Admin Portal have separate frontend flags and must
+also be disabled in their Hostinger environments.
+
 ### Key Configuration Options
 
 | Parameter | Description | Default |
@@ -371,4 +391,4 @@ helm install tranzrmoves ./Apps/charts/tranzrmoves \
 For questions and support:
 - Email: admin@labgrid.net
 - Documentation: https://docs.labgrid.net
-- GitHub: https://github.com/labgrid/tranzrmoves 
+- GitHub: https://github.com/labgrid/tranzrmoves
