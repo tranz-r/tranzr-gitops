@@ -1,0 +1,23 @@
+# PR Lens — https://prlens.dev (GitHub App posts diagrams on PRs)
+schemaVersion: 0.1.1
+lenses: [architecture, data-flow]
+branding: true
+github:
+  comment:
+    collapsed: false
+map:
+  exclude:
+    - "**/*.md"
+    - "**/*.backup"
+  lane:
+    - match: app/**
+      lane: helm-apps
+    - match: .github/**
+      lane: ci
+  rename:
+    - match: app/templates/**
+      to: Helm templates
+    - match: app/values-staging.yaml
+      to: Staging values
+    - match: app/values-production.yaml
+      to: Production values
