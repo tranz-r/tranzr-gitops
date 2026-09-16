@@ -11,6 +11,13 @@ global:
 features:
   movesCalendarPricingV3:
     enabled: false
+  webQuoteTurnstile:
+    # Backend enforcement is activated per environment only after the matching
+    # Web Quote site key and API secret have been deployed and verified.
+    enabled: false
+    allowedHostnames:
+      - tranzrmoves.com
+      - www.tranzrmoves.com
 
 # Namespace override
 namespaceOverride: "tranzr-moves"

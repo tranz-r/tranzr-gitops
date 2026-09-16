@@ -72,6 +72,15 @@ spec:
               value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
             - name: MovesPricing__CalendarProjectionEnabled
               value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
+            # Web Quote bot validation is server-authoritative. Keep the
+            # enforcement flag and hostname allowlist outside backend.env so
+            # environment-specific list replacement cannot drop them.
+            - name: Turnstile__WebQuote__Enabled
+              value: {{ .Values.features.webQuoteTurnstile.enabled | quote }}
+            {{- range $index, $hostname := .Values.features.webQuoteTurnstile.allowedHostnames }}
+            - name: Turnstile__WebQuote__AllowedHostnames__{{ $index }}
+              value: {{ $hostname | quote }}
+            {{- end }}
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
