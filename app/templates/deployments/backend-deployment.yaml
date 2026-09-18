@@ -81,6 +81,10 @@ spec:
             - name: Turnstile__WebQuote__AllowedHostnames__{{ $index }}
               value: {{ $hostname | quote }}
             {{- end }}
+            # Mapbox Directions/Geocoding base URL — keep outside backend.env so
+            # production env-list replacement cannot drop it (null BaseAddress → 500).
+            - name: MAPBOX_BASE_URL
+              value: "https://api.mapbox.com"
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
