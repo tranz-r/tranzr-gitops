@@ -25,7 +25,7 @@ global:
 features:
   webQuoteTurnstile:
     # Production activation requires a separate, explicit rollout decision.
-    enabled: false
+    enabled: true
     allowedHostnames:
       - tranzzer.com
       - www.tranzzer.com
@@ -49,15 +49,42 @@ gatewayApi:
 deployments:
   backend:
     replicaCount: 2
+    # NOTE: this list *replaces* values.yaml deployments.backend.env (Helm merge).
+    # Keep non-URL base env here or Mapbox/Speech/notifications break in prod.
     env:
+      - name: LOG_LEVEL
+        value: "debug"
+      - name: PORT
+        value: "8080"
+      - name: NODE_ENV
+        value: "production"
+      - name: CACHE_TTL
+        value: "300"
+      - name: FROM_EMAIL
+        value: "bookings@tranzrmoves.com"
+      - name: FROM_NAME
+        value: "Tranzzer Moves"
+      # MAPBOX_BASE_URL is set in backend-deployment.yaml (outside this list).
       - name: CHECKOUT_SESSION_SUCCESS_URL
         value: "https://tranzzer.com/moves/checkout/success?session_id={CHECKOUT_SESSION_ID}"
       - name: CHECKOUT_SESSION_CANCEL_URL
         value: "https://tranzzer.com/moves/checkout/cancel"
+      - name: Notifications__UseDurableMessaging
+        value: "true"
       - name: BusinessPortal__QuoteJourneyBaseUrl
         value: "https://tranzzer.com/moves"
       - name: BusinessPortal__PortalBaseUrl
         value: "https://portal.tranzzer.com"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
+      - name: SpeechInventory__SttBaseUrl
+        value: "http://tranzr-whisper-stt"
+      - name: SpeechInventory__MaxDurationSeconds
+        value: "15"
+      - name: SpeechInventory__HardCeilingSeconds
+        value: "20"
+      - name: SpeechInventory__SttTimeoutSeconds
+        value: "45"
 
   whisperStt:
     replicaCount: 2
