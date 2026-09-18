@@ -1,0 +1,30 @@
+{{- if .Values.deployments.whisperStt.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.deployments.whisperStt.name }}-ingress
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: whisper-stt
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: whisper-stt
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: backend
+      ports:
+        - protocol: TCP
+          port: {{ .Values.deployments.whisperStt.containerPort }}
+{{- end }}

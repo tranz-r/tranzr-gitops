@@ -10,6 +10,12 @@ global:
   # to the StorageClass that exists on the staging cluster (can differ from production).
   defaultStorageClass: "synology-iscsi-delete-wffc"
 
+# Staging proves Calendar pricing v3 while production retains the legacy
+# RemovalPricingStrategy fallback through the default false value.
+features:
+  movesCalendarPricingV3:
+    enabled: true
+
 ingress:
   enabled: false
   # Edge is Gateway API (labgrid-gateway @ 192.168.1.205) via NPM → http://.205:80.

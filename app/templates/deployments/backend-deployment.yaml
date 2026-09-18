@@ -61,6 +61,26 @@ spec:
           env:
             {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-api") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" true) | nindent 12 }}
+            # One staging-only switch controls both the Moves pricing strategy
+            # and its additive Calendar v3 capabilities. Rendering these here
+            # avoids replacing deployments.backend.env in environment values.
+            - name: MovesPricing__Enabled
+              value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
+            - name: MovesPricing__CalendarAvailabilityEnabled
+              value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
+            - name: MovesPricing__CalendarPricingEnabled
+              value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
+            - name: MovesPricing__CalendarProjectionEnabled
+              value: {{ .Values.features.movesCalendarPricingV3.enabled | quote }}
+            # Web Quote bot validation is server-authoritative. Keep the
+            # enforcement flag and hostname allowlist outside backend.env so
+            # environment-specific list replacement cannot drop them.
+            - name: Turnstile__WebQuote__Enabled
+              value: {{ .Values.features.webQuoteTurnstile.enabled | quote }}
+            {{- range $index, $hostname := .Values.features.webQuoteTurnstile.allowedHostnames }}
+            - name: Turnstile__WebQuote__AllowedHostnames__{{ $index }}
+              value: {{ $hostname | quote }}
+            {{- end }}
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -105,4 +125,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- end }} 
+{{- end }}

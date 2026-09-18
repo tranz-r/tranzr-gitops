@@ -1,0 +1,104 @@
+{{- if .Values.deployments.whisperStt.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.deployments.whisperStt.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: whisper-stt
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.deployments.whisperStt.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: whisper-stt
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: whisper-stt
+        helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.deployments.whisperStt.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: whisper-stt
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "whisperStt") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.deployments.whisperStt.containerPort }}
+              protocol: TCP
+          env:
+            {{- range .Values.deployments.whisperStt.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: audio-tmp
+              mountPath: /audio-tmp
+          {{- with .Values.deployments.whisperStt.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.whisperStt.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.whisperStt.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: audio-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

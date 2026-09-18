@@ -22,6 +22,14 @@ global:
   # Production cluster StorageClass (must exist on the prod cluster)
   defaultStorageClass: "hcloud-volumes"
 
+features:
+  webQuoteTurnstile:
+    # Production activation requires a separate, explicit rollout decision.
+    enabled: false
+    allowedHostnames:
+      - tranzzer.com
+      - www.tranzzer.com
+
 ingress:
   enabled: false
 
@@ -50,6 +58,12 @@ deployments:
         value: "https://tranzzer.com/moves"
       - name: BusinessPortal__PortalBaseUrl
         value: "https://portal.tranzzer.com"
+
+  whisperStt:
+    replicaCount: 2
+    autoscaling:
+      minReplicas: 2
+      maxReplicas: 5
 
   workerProcessor:
     env:

@@ -1,0 +1,19 @@
+{{- if and .Values.deployments.whisperStt.enabled .Values.deployments.whisperStt.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.deployments.whisperStt.name }}-pdb
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: whisper-stt
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.deployments.whisperStt.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-whisper-stt
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: whisper-stt
+{{- end }}
