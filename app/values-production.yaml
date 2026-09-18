@@ -23,6 +23,8 @@ global:
   defaultStorageClass: "hcloud-volumes"
 
 features:
+  movesCalendarPricingV3:
+    enabled: true
   webQuoteTurnstile:
     # Production activation requires a separate, explicit rollout decision.
     enabled: true
