@@ -69,7 +69,7 @@ features:
       sweeperBatchSize: 100
     catalogueLearning:
       # Adds curated catalogue category context to model prompting; keep false for V1.
-      categoryAwareInferenceEnabled: false
+      categoryAwareInferenceEnabled: true
       # Emits/ingests model-observed candidate catalogue data; keep false for V1.
       candidateLearningEnabled: false
       # Reserved gate for candidate-review workflow; keep false for V1.
