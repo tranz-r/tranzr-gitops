@@ -83,8 +83,10 @@ spec:
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
           
           # Environment variables for database connection
-          {{- if or .Values.jobs.dbMigration.env .Values.jobs.dbMigration.envFromSecrets }}
           env:
+            # EF self-contained bundle extracts under readOnlyRootFilesystem
+            - name: DOTNET_BUNDLE_EXTRACT_BASE_DIR
+              value: /tmp
             {{- range .Values.jobs.dbMigration.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -96,7 +98,6 @@ spec:
                   name: {{ $.Values.externalSecrets.name }}
                   key: {{ .secretKey }}
             {{- end }}
-          {{- end }}
           
           resources:
             {{- toYaml .Values.jobs.dbMigration.resources | nindent 12 }}
@@ -105,4 +106,12 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-{{- end }} 
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

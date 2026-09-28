@@ -856,7 +856,8 @@ jobs:
 
 # Additional volumes and volume mounts
 # A writable temp dir is required under the read-only root filesystem so that
-# Chromium (server-side confirmation PDF rendering) can create its profile.
+# Chromium (server-side confirmation PDF rendering) can create its profile,
+# and EF self-contained migrator bundles can extract (DOTNET_BUNDLE_EXTRACT_BASE_DIR).
 volumes:
   - name: tmp
     emptyDir: {}
