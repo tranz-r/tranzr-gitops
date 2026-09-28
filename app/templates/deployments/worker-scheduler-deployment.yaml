@@ -56,6 +56,10 @@ spec:
               value: Scheduler
             {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-scheduler") | nindent 12 }}
             {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" true "rabbitmq" true) | nindent 12 }}
+            # Vision V1 / Photo Inventory — outside workerScheduler.env so production
+            # list replacement cannot drop retention gates or Azure storage refs.
+            {{- include "tranzrmoves.visionSchedulerEnv" (dict "root" .) | nindent 12 }}
+            {{- include "tranzrmoves.visionSchedulerSecretEnv" (dict "root" .) | nindent 12 }}
             {{- range $key, $val := .Values.deployments.workerScheduler.payLater }}
             - name: PayLater__{{ $key }}
               value: {{ $val | quote }}

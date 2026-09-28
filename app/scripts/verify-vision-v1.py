@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+"""Repository-local Vision V1 / Photo Inventory GitOps verifier.
+
+Renders Helm manifests for default/shared, staging, production (all active), and a
+temporary rollback/dark override (no secrets / no cluster). Exit 0 only when all
+assertions pass.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+CHART = ROOT / "app"
+VALUES_DEFAULT = CHART / "values.yaml"
+VALUES_STAGING = CHART / "values-staging.yaml"
+VALUES_PRODUCTION = CHART / "values-production.yaml"
+
+PROD_VERSION = "0.121.1"
+OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
+AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
+
+OPENROUTER_BOUNDS = {
+    "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
+    "Vision__OpenRouter__TimeoutSeconds": "45",
+    "Vision__OpenRouter__MaxTokens": "350",
+    "Vision__OpenRouter__MaxResponseBodyBytes": "262144",
+}
+
+CATALOGUE_KEYS = (
+    "Vision__CatalogueLearning__CategoryAwareInferenceEnabled",
+    "Vision__CatalogueLearning__CandidateLearningEnabled",
+    "Vision__CatalogueLearning__AdminReviewEnabled",
+    "Vision__CatalogueLearning__ManufacturerLookupEnabled",
+)
+
+
+class Failures(list[str]):
+    def check(self, cond: bool, msg: str) -> None:
+        if not cond:
+            self.append(msg)
+
+
+def run(cmd: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=check,
+    )
+
+
+def helm_template(
+    release: str,
+    values_files: list[Path],
+    *,
+    set_yaml: str | None = None,
+    extra_values_file: Path | None = None,
+) -> str:
+    cmd = ["helm", "template", release, str(CHART)]
+    for vf in values_files:
+        cmd.extend(["-f", str(vf)])
+    if extra_values_file is not None:
+        cmd.extend(["-f", str(extra_values_file)])
+    if set_yaml:
+        cmd.extend(["--set-json", set_yaml] if set_yaml.startswith("{") else ["--set", set_yaml])
+    proc = run(cmd, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"helm template failed ({' '.join(cmd)}):\n{proc.stderr or proc.stdout}"
+        )
+    return proc.stdout
+
+
+def helm_lint(values_files: list[Path]) -> None:
+    cmd = ["helm", "lint", str(CHART)]
+    for vf in values_files:
+        cmd.extend(["-f", str(vf)])
+    proc = run(cmd, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"helm lint failed ({' '.join(cmd)}):\n{proc.stderr or proc.stdout}")
+
+
+def load_docs(rendered: str) -> list[dict[str, Any]]:
+    docs: list[dict[str, Any]] = []
+    for doc in yaml.safe_load_all(rendered):
+        if isinstance(doc, dict):
+            docs.append(doc)
+    return docs
+
+
+def find_docs(docs: list[dict[str, Any]], kind: str, name_substr: str) -> list[dict[str, Any]]:
+    out = []
+    for d in docs:
+        if d.get("kind") != kind:
+            continue
+        name = (d.get("metadata") or {}).get("name", "")
+        if name_substr in name:
+            out.append(d)
+    return out
+
+
+def container_env(doc: dict[str, Any]) -> dict[str, Any]:
+    """Map env name -> either literal value or secretKeyRef dict."""
+    containers = (
+        ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+    ).get("containers") or []
+    if not containers:
+        return {}
+    env_list = containers[0].get("env") or []
+    result: dict[str, Any] = {}
+    for item in env_list:
+        name = item.get("name")
+        if not name:
+            continue
+        if "value" in item:
+            result[name] = item.get("value")
+        elif "valueFrom" in item:
+            result[name] = (item.get("valueFrom") or {}).get("secretKeyRef") or item["valueFrom"]
+    return result
+
+
+def vision_env_contract(doc: dict[str, Any]) -> dict[str, Any]:
+    """Exact Vision__* env name -> {value} or {valueFrom} mapping for contract compare."""
+    containers = (
+        ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+    ).get("containers") or []
+    if not containers:
+        return {}
+    env_list = containers[0].get("env") or []
+    result: dict[str, Any] = {}
+    for item in env_list:
+        name = item.get("name")
+        if not name or not str(name).startswith("Vision__"):
+            continue
+        entry: dict[str, Any] = {}
+        if "value" in item:
+            entry["value"] = item.get("value")
+        if "valueFrom" in item:
+            entry["valueFrom"] = item.get("valueFrom")
+        result[name] = entry
+    return result
+
+
+def container_image(doc: dict[str, Any]) -> str:
+    containers = (
+        ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+    ).get("containers") or []
+    if not containers:
+        return ""
+    return containers[0].get("image") or ""
+
+
+def secret_ref_key(env_val: Any) -> str | None:
+    if isinstance(env_val, dict):
+        return env_val.get("key")
+    return None
+
+
+def assert_catalogue_learning_false(
+    f: Failures, label: str, be: dict[str, Any], pe: dict[str, Any], se: dict[str, Any]
+) -> None:
+    for env_map, role in ((be, "API"), (pe, "processor"), (se, "scheduler")):
+        for key in CATALOGUE_KEYS:
+            f.check(env_map.get(key) == "false", f"{label}: {role} {key} false")
+
+
+def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
+    backend = find_docs(docs, "Deployment", "tranzr-service")
+    processor = find_docs(docs, "Deployment", "worker-processor")
+    scheduler = find_docs(docs, "Deployment", "worker-scheduler")
+    f.check(len(backend) == 1, f"{label}: expected one backend Deployment")
+    f.check(len(processor) == 1, f"{label}: expected one processor Deployment")
+    f.check(len(scheduler) == 1, f"{label}: expected one scheduler Deployment")
+    if not (backend and processor and scheduler):
+        return
+
+    be = container_env(backend[0])
+    pe = container_env(processor[0])
+    se = container_env(scheduler[0])
+
+    f.check(be.get("Vision__Analysis__MessagingEnabled") == "true", f"{label}: API messaging on")
+    f.check(be.get("Vision__Analysis__IncludeConsumer") == "false", f"{label}: API includeConsumer false")
+    f.check(be.get("Vision__Analysis__HubEnabled") == "false", f"{label}: API hubEnabled false")
+    f.check(be.get("Vision__Provider") == "Fake", f"{label}: API provider Fake")
+    f.check(be.get("Vision__Analysis__QueueName") == "vision-analysis", f"{label}: API queue name")
+    f.check(be.get("Vision__Media__Container") == "quote-media-vision", f"{label}: API media container")
+
+    f.check(pe.get("Vision__Analysis__MessagingEnabled") == "true", f"{label}: processor messaging on")
+    f.check(pe.get("Vision__Provider") == "OpenRouter", f"{label}: processor provider OpenRouter")
+    f.check(se.get("Vision__Media__RetentionWorkerEnabled") == "true", f"{label}: retention on")
+
+    assert_catalogue_learning_false(f, label, be, pe, se)
+
+
+def assert_staging_production_vision_contract(
+    f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
+) -> None:
+    """Staging and production must render the same Vision__* env contract."""
+    for role, name_substr in (
+        ("API", "tranzr-service"),
+        ("processor", "worker-processor"),
+        ("scheduler", "worker-scheduler"),
+    ):
+        stg = find_docs(staging_docs, "Deployment", name_substr)
+        prod = find_docs(production_docs, "Deployment", name_substr)
+        f.check(len(stg) == 1 and len(prod) == 1, f"contract: {role} Deployments present")
+        if not (stg and prod):
+            continue
+        stg_contract = vision_env_contract(stg[0])
+        prod_contract = vision_env_contract(prod[0])
+        f.check(
+            stg_contract == prod_contract,
+            f"contract: staging vs production {role} Vision__* env mismatch "
+            f"(staging={stg_contract!r} production={prod_contract!r})",
+        )
+
+
+def assert_api_secrets(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
+    backend = find_docs(docs, "Deployment", "tranzr-service")[0]
+    be = container_env(backend)
+    f.check(
+        secret_ref_key(be.get("ConnectionStrings__TranzrMovesDatabaseConnection")) is not None,
+        f"{label}: API has DB secret ref",
+    )
+    f.check("RABBITMQ_PASSWORD" in be, f"{label}: API has RabbitMQ password env")
+    f.check(
+        secret_ref_key(be.get("AZURE_STORAGE_CONNECTION_STRING")) == AZURE_STORAGE_SECRET_KEY,
+        f"{label}: API Azure storage secret key",
+    )
+    f.check("OPENROUTER_API_KEY" not in be, f"{label}: API must not receive OPENROUTER_API_KEY")
+    f.check(be.get("Vision__Analysis__IncludeConsumer") == "false", f"{label}: includeConsumer false")
+    f.check(be.get("Vision__Analysis__HubEnabled") == "false", f"{label}: hubEnabled false")
+
+
+def assert_processor(f: Failures, label: str, docs: list[dict[str, Any]], *, activated: bool) -> None:
+    processor = find_docs(docs, "Deployment", "worker-processor")[0]
+    pe = container_env(processor)
+    f.check(
+        secret_ref_key(pe.get("ConnectionStrings__TranzrMovesDatabaseConnection")) is not None,
+        f"{label}: processor has DB secret ref",
+    )
+    f.check("RABBITMQ_PASSWORD" in pe, f"{label}: processor has RabbitMQ password env")
+    f.check(
+        secret_ref_key(pe.get("AZURE_STORAGE_CONNECTION_STRING")) == AZURE_STORAGE_SECRET_KEY,
+        f"{label}: processor Azure storage secret key",
+    )
+    f.check(
+        secret_ref_key(pe.get("OPENROUTER_API_KEY")) == OPENROUTER_SECRET_KEY,
+        f"{label}: processor OpenRouter secret key ref",
+    )
+    for k, expected in OPENROUTER_BOUNDS.items():
+        f.check(pe.get(k) == expected, f"{label}: processor {k} == {expected!r} (got {pe.get(k)!r})")
+
+    if activated:
+        f.check(pe.get("Vision__Analysis__MessagingEnabled") == "true", f"{label}: processor messaging on")
+        f.check(pe.get("Vision__Provider") == "OpenRouter", f"{label}: processor provider OpenRouter")
+    else:
+        f.check(pe.get("Vision__Analysis__MessagingEnabled") == "false", f"{label}: processor messaging off")
+        f.check(pe.get("Vision__Provider") == "Fake", f"{label}: processor provider Fake")
+
+
+def assert_scheduler(f: Failures, label: str, docs: list[dict[str, Any]], *, retention: bool) -> None:
+    scheduler = find_docs(docs, "Deployment", "worker-scheduler")[0]
+    se = container_env(scheduler)
+    f.check(
+        secret_ref_key(se.get("ConnectionStrings__TranzrMovesDatabaseConnection")) is not None,
+        f"{label}: scheduler has DB secret ref",
+    )
+    f.check("RABBITMQ_PASSWORD" in se, f"{label}: scheduler has RabbitMQ password env")
+    f.check(
+        secret_ref_key(se.get("AZURE_STORAGE_CONNECTION_STRING")) == AZURE_STORAGE_SECRET_KEY,
+        f"{label}: scheduler Azure storage secret key",
+    )
+    f.check("OPENROUTER_API_KEY" not in se, f"{label}: scheduler must not receive OPENROUTER_API_KEY")
+    expected = "true" if retention else "false"
+    f.check(
+        se.get("Vision__Media__RetentionWorkerEnabled") == expected,
+        f"{label}: retentionWorkerEnabled == {expected}",
+    )
+    f.check(se.get("Vision__Media__Container") == "quote-media-vision", f"{label}: scheduler media container")
+    f.check(se.get("Vision__Media__PolicyVersion") == "media-policy-v1", f"{label}: media policy version")
+    f.check(
+        se.get("Vision__Media__RetentionPolicyVersion") == "retention-policy-v1",
+        f"{label}: retention policy version",
+    )
+    f.check(
+        se.get("Vision__Media__NormalizationPolicyVersion") == "norm-v1-jpeg-q85-s420",
+        f"{label}: normalization policy version",
+    )
+    f.check(se.get("Vision__Media__IntentTtlMinutes") == "10", f"{label}: intent TTL")
+    f.check(se.get("Vision__Media__UnverifiedIntentGraceMinutes") == "120", f"{label}: unverified grace")
+    f.check(se.get("Vision__Media__SweeperIntervalMinutes") == "15", f"{label}: sweeper interval")
+    f.check(se.get("Vision__Media__SweeperBatchSize") == "100", f"{label}: sweeper batch")
+
+
+def assert_no_openrouter_on_others(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
+    for kind, name in (
+        ("Deployment", "tranzr-gateway"),
+        ("Deployment", "notifications"),
+        ("Deployment", "tranzr-service"),
+        ("Deployment", "worker-scheduler"),
+    ):
+        matches = find_docs(docs, kind, name)
+        for doc in matches:
+            env = container_env(doc)
+            f.check("OPENROUTER_API_KEY" not in env, f"{label}: {name} must not have OPENROUTER_API_KEY")
+            for k, v in env.items():
+                if isinstance(v, str) and re.search(r"(?i)sk-or-|openrouter\.ai/api/v1/keys", v):
+                    f.check(False, f"{label}: {name} env {k} looks like an OpenRouter credential")
+
+
+def assert_openrouter_externalsecret(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
+    secrets = [d for d in docs if d.get("kind") == "ExternalSecret"]
+    app_secret = None
+    for d in secrets:
+        if (d.get("metadata") or {}).get("name") == "tranzrmoves-secrets":
+            app_secret = d
+            break
+    f.check(app_secret is not None, f"{label}: tranzrmoves-secrets ExternalSecret present")
+    if not app_secret:
+        return
+    data = ((app_secret.get("spec") or {}).get("data")) or []
+    match = None
+    for item in data:
+        if item.get("secretKey") == OPENROUTER_SECRET_KEY:
+            match = item
+            break
+    f.check(match is not None, f"{label}: ExternalSecret maps {OPENROUTER_SECRET_KEY}")
+    if match:
+        remote = ((match.get("remoteRef") or {}).get("key"))
+        f.check(remote == OPENROUTER_SECRET_KEY, f"{label}: remoteRef.key == {OPENROUTER_SECRET_KEY}")
+    blob = yaml.dump(app_secret)
+    f.check("sk-or-" not in blob, f"{label}: ExternalSecret must not embed literal OpenRouter secrets")
+    f.check(re.search(r"(?i)api[_-]?key\s*[:=]\s*['\"]?[a-zA-Z0-9]{20,}", blob) is None,
+            f"{label}: ExternalSecret must not embed literal API key values")
+
+
+def assert_prod_images(f: Failures, docs: list[dict[str, Any]]) -> None:
+    expected = {
+        "tranzr-service": f"ghcr.io/tranz-r/tranzr-moves-services:{PROD_VERSION}",
+        "worker-processor": f"ghcr.io/tranz-r/tranzr-moves-worker:{PROD_VERSION}",
+        "worker-scheduler": f"ghcr.io/tranz-r/tranzr-moves-worker:{PROD_VERSION}",
+        "db-migration": f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
+    }
+    for name_substr, image in expected.items():
+        kind = "Job" if name_substr == "db-migration" else "Deployment"
+        matches = find_docs(docs, kind, name_substr)
+        f.check(len(matches) >= 1, f"production: missing {kind} containing {name_substr}")
+        if matches:
+            got = container_image(matches[0])
+            f.check(got == image, f"production: {name_substr} image {got!r} != {image!r}")
+
+
+def assert_migration_enabled(f: Failures, docs: list[dict[str, Any]]) -> None:
+    jobs = find_docs(docs, "Job", "db-migration")
+    f.check(len(jobs) >= 1, "production: db-migration Job must be rendered (enabled)")
+    if jobs:
+        f.check(
+            container_image(jobs[0]) == f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
+            "production: migrator image must be 0.121.1",
+        )
+
+
+def write_override(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+
+def main() -> int:
+    failures = Failures()
+    print("== Vision V1 GitOps verifier ==")
+    print(f"chart: {CHART}")
+
+    try:
+        helm_lint([VALUES_DEFAULT])
+        print("PASS helm lint (default)")
+        helm_lint([VALUES_DEFAULT, VALUES_STAGING])
+        print("PASS helm lint (staging)")
+        helm_lint([VALUES_DEFAULT, VALUES_PRODUCTION])
+        print("PASS helm lint (production)")
+    except RuntimeError as exc:
+        failures.append(str(exc))
+
+    try:
+        default_render = helm_template("trm-default", [VALUES_DEFAULT])
+        staging_render = helm_template("trm-stg", [VALUES_DEFAULT, VALUES_STAGING])
+        production_render = helm_template("trm-prod", [VALUES_DEFAULT, VALUES_PRODUCTION])
+        print("PASS helm template (default, staging, production)")
+    except RuntimeError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    default_docs = load_docs(default_render)
+    staging_docs = load_docs(staging_render)
+    production_docs = load_docs(production_render)
+
+    staging_backend = find_docs(staging_docs, "Deployment", "tranzr-service")
+    if staging_backend:
+        img = container_image(staging_backend[0])
+        failures.check(bool(img), "staging: backend image must render")
+        print(f"PASS staging image renders ({img})")
+
+    # Shared baseline activates Vision in default, staging, and production.
+    for label, docs in (
+        ("default", default_docs),
+        ("staging", staging_docs),
+        ("production", production_docs),
+    ):
+        assert_active_vision(failures, label, docs)
+    print("PASS active Vision gates (default + staging + production)")
+    print("PASS API Fake / includeConsumer false / hub false (all three)")
+    print("PASS catalogue-learning false (all three)")
+
+    assert_staging_production_vision_contract(failures, staging_docs, production_docs)
+    print("PASS staging/production Vision__* env contract identical (API/processor/scheduler)")
+
+    assert_prod_images(failures, production_docs)
+    assert_migration_enabled(failures, production_docs)
+    print(f"PASS production images + migrator == {PROD_VERSION}")
+
+    for label, docs in (
+        ("default", default_docs),
+        ("staging", staging_docs),
+        ("production", production_docs),
+    ):
+        assert_api_secrets(failures, label, docs)
+        assert_processor(failures, label, docs, activated=True)
+        assert_scheduler(failures, label, docs, retention=True)
+        assert_openrouter_externalsecret(failures, label, docs)
+        assert_no_openrouter_on_others(failures, label, docs)
+    print("PASS API DB/RabbitMQ/Azure; no OpenRouter; hub/includeConsumer false (all)")
+    print("PASS processor active + OpenRouter bounds + secret refs (all)")
+    print("PASS scheduler retention on + retention settings + Azure storage (all)")
+    print("PASS OpenRouter ExternalSecret mapping (no literal secret)")
+    print("PASS gateway/API/scheduler/notifications lack OpenRouter credentials")
+
+    with tempfile.TemporaryDirectory(prefix="vision-v1-verify-") as tmp:
+        tmp_path = Path(tmp)
+        rollback_override = tmp_path / "rollback-dark.yaml"
+        write_override(
+            rollback_override,
+            {
+                "features": {
+                    "vision": {
+                        "analysis": {
+                            "apiMessagingEnabled": False,
+                            "processorMessagingEnabled": False,
+                        },
+                        "provider": {"processor": "Fake"},
+                        "media": {"retentionWorkerEnabled": False},
+                    }
+                }
+            },
+        )
+
+        try:
+            # Override shared baseline (production stack inherits active defaults).
+            rollback_render = helm_template(
+                "trm-prod-rollback",
+                [VALUES_DEFAULT, VALUES_PRODUCTION],
+                extra_values_file=rollback_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+
+        rollback_docs = load_docs(rollback_render)
+        be = container_env(find_docs(rollback_docs, "Deployment", "tranzr-service")[0])
+        pe = container_env(find_docs(rollback_docs, "Deployment", "worker-processor")[0])
+        se = container_env(find_docs(rollback_docs, "Deployment", "worker-scheduler")[0])
+
+        failures.check(be.get("Vision__Analysis__MessagingEnabled") == "false", "rollback: API messaging off")
+        failures.check(be.get("Vision__Provider") == "Fake", "rollback: API provider stays Fake")
+        failures.check(be.get("Vision__Analysis__IncludeConsumer") == "false", "rollback: includeConsumer false")
+        failures.check(be.get("Vision__Analysis__HubEnabled") == "false", "rollback: hubEnabled false")
+        assert_processor(failures, "rollback", rollback_docs, activated=False)
+        assert_scheduler(failures, "rollback", rollback_docs, retention=False)
+        assert_catalogue_learning_false(failures, "rollback", be, pe, se)
+        print("PASS rollback/dark override returns messaging/provider/retention to off/Fake")
+        print("PASS catalogue-learning remains false under rollback")
+
+        assert_no_openrouter_on_others(failures, "rollback", rollback_docs)
+        assert_openrouter_externalsecret(failures, "rollback", rollback_docs)
+
+    for path in (
+        VALUES_DEFAULT,
+        VALUES_PRODUCTION,
+        VALUES_STAGING,
+        CHART / "templates" / "_helpers.tpl",
+        CHART / "templates" / "deployments" / "backend-deployment.yaml",
+        CHART / "templates" / "deployments" / "worker-processor-deployment.yaml",
+        CHART / "templates" / "deployments" / "worker-scheduler-deployment.yaml",
+    ):
+        text = path.read_text(encoding="utf-8")
+        failures.check("sk-or-" not in text, f"source {path.name}: must not contain sk-or- literal")
+        failures.check(
+            "AccountKey=" not in text,
+            f"source {path.name}: must not embed Azure AccountKey literals",
+        )
+
+    if failures:
+        print("\nFAILED assertions:")
+        for msg in failures:
+            print(f"  - {msg}")
+        return 1
+
+    print("\nAll Vision V1 GitOps assertions passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -16,6 +16,67 @@ features:
       - tranzrmoves.com
       - www.tranzrmoves.com
 
+  # Vision V1 / Photo Inventory — shared active baseline for staging + production.
+  # Env is injected via helpers outside deployments.*.env so production list
+  # replacement cannot drop it. Env-specific files override only real differences.
+  # Never put secret values here; OpenRouter key is AKV-only.
+  # Keep includeConsumer / hub / catalogueLearning false for V1.
+  vision:
+    analysis:
+      # When true, the API publishes Vision analysis jobs to RabbitMQ.
+      apiMessagingEnabled: true
+      # When true, the dedicated processor worker consumes Vision analysis jobs.
+      processorMessagingEnabled: true
+      # Whether the API hosts an in-process analysis consumer; false keeps inference in the processor.
+      includeConsumer: false
+      # Optional /hubs/quote-vision SignalR progress hub. False: polling stays authoritative
+      # and avoids the current multi-replica / Redis backplane limitation.
+      hubEnabled: false
+      # Shared RabbitMQ/Wolverine queue used by the API publisher and processor consumer.
+      queueName: vision-analysis
+    provider:
+      # Provider selected inside the API host; Fake because the API publishes and does not infer.
+      api: Fake
+      # Provider used by the processor; OpenRouter activates approved remote inference.
+      processor: OpenRouter
+    openRouter:
+      # OpenRouter provider service base URL.
+      baseUrl: "https://openrouter.ai"
+      # Per-provider-request timeout in seconds.
+      timeoutSeconds: 45
+      # Maximum generated output tokens per request.
+      maxTokens: 350
+      # Hard limit on provider response payload size (bytes).
+      maxResponseBodyBytes: 262144
+    media:
+      # Dedicated private Azure Blob container for Vision media.
+      container: quote-media-vision
+      # Scheduler cleanup master switch; true is required while uploads are active.
+      retentionWorkerEnabled: true
+      # Audit/provenance version recorded on media.
+      policyVersion: media-policy-v1
+      # Audit identity for retention rules.
+      retentionPolicyVersion: retention-policy-v1
+      # Immutable canonical image-normalization contract (EXIF bake/strip, JPEG quality, chroma subsampling).
+      normalizationPolicyVersion: norm-v1-jpeg-q85-s420
+      # Lifetime of browser upload permission, in minutes.
+      intentTtlMinutes: 10
+      # Delay before cleanup of expired never-verified uploads, in minutes.
+      unverifiedIntentGraceMinutes: 120
+      # Cleanup worker cadence, in minutes.
+      sweeperIntervalMinutes: 15
+      # Maximum records handled per sweep.
+      sweeperBatchSize: 100
+    catalogueLearning:
+      # Adds curated catalogue category context to model prompting; keep false for V1.
+      categoryAwareInferenceEnabled: false
+      # Emits/ingests model-observed candidate catalogue data; keep false for V1.
+      candidateLearningEnabled: false
+      # Reserved gate for candidate-review workflow; keep false for V1.
+      adminReviewEnabled: false
+      # Reserved gate for manufacturer enrichment/lookup; keep false for V1.
+      manufacturerLookupEnabled: false
+
 # Namespace override
 namespaceOverride: "tranzr-moves"
 
@@ -34,10 +95,10 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.107.0"
+  movesVersion: "0.121.1"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.37.0"
+    tag: "0.37.1"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:
@@ -230,6 +291,7 @@ deployments:
       # Private blob containers (API CreateIfNotExists on first upload):
       #   job-photos         — job pickup/dropoff photos
       #   driver-compliance  — licence front/back + passport (Feature 23 / #91)
+      #   quote-media-vision — private Vision V1 uploads and canonical derivatives (scoped SAS)
       - name: TURNSTILE_SECRET_KEY
         secretKey: cloudflare-turnstile-secret-key
       - name: WebPush__VapidPublicKey
@@ -628,6 +690,13 @@ externalSecrets:
       description: "Azure storage connection string"
       remoteRef:
         key: tranzr-azure-storage-connection-string
+    # Vision V1 / Photo Inventory — processor only. Create in Azure Key Vault before sync:
+    #   az keyvault secret set --vault-name <vault> --name tranzr-openrouter-api-key --value '...'
+    # Do not map this key to API, scheduler, gateway, frontend, or notifications.
+    - secretKey: tranzr-openrouter-api-key
+      description: "OpenRouter API key (Vision processor worker only)"
+      remoteRef:
+        key: tranzr-openrouter-api-key
     - secretKey: tranzr-communication-services-connection-string
       description: "Communication services connection string"
       remoteRef:
