@@ -24,7 +24,7 @@ VALUES_DEFAULT = CHART / "values.yaml"
 VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
-PROD_VERSION = "0.121.2"
+PROD_VERSION = "0.121.3"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 
@@ -400,7 +400,7 @@ def assert_migration_enabled(f: Failures, docs: list[dict[str, Any]]) -> None:
     if jobs:
         f.check(
             container_image(jobs[0]) == f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
-            "production: migrator image must be 0.121.2",
+            "production: migrator image must be 0.121.3",
         )
 
 
