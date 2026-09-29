@@ -313,7 +313,8 @@ deployments:
         memory: 256Mi
       limits:
         cpu: 500m
-        memory: 512Mi
+        # CI still gates normalization at 512MiB; 768MiB adds runtime-variation headroom.
+        memory: 768Mi
 
     # Probes configuration
     livenessProbe:
