@@ -184,7 +184,8 @@ Usage: {{ include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "t
 {{- end }}
 
 {{/*
-Vision catalogue-learning gates (keep false for V1).
+Vision catalogue-learning gates: category-aware true; candidate learning /
+admin review / manufacturer lookup remain false.
 Usage: {{ include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" .) | nindent 12 }}
 */}}
 {{- define "tranzrmoves.visionCatalogueLearningEnv" -}}
@@ -218,6 +219,8 @@ Usage: {{ include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
   value: {{ $v.provider.api | quote }}
 - name: Vision__Media__Container
   value: {{ $v.media.container | quote }}
+- name: Vision__ConfirmationReview__ActivationEnabled
+  value: {{ $v.confirmationReview.activationEnabled | quote }}
 {{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
 {{- end }}
 
@@ -242,6 +245,8 @@ Usage: {{ include "tranzrmoves.visionProcessorEnv" (dict "root" .) | nindent 12 
   value: {{ $v.openRouter.maxTokens | quote }}
 - name: Vision__OpenRouter__MaxResponseBodyBytes
   value: {{ $v.openRouter.maxResponseBodyBytes | quote }}
+- name: Vision__OpenRouter__MaxConcurrentRequests
+  value: {{ $v.openRouter.maxConcurrentRequests | quote }}
 - name: Vision__Media__Container
   value: {{ $v.media.container | quote }}
 {{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}

@@ -8,6 +8,7 @@ assertions pass.
 
 from __future__ import annotations
 
+import copy
 import re
 import subprocess
 import sys
@@ -23,23 +24,28 @@ VALUES_DEFAULT = CHART / "values.yaml"
 VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
-PROD_VERSION = "0.121.1"
+PROD_VERSION = "0.121.2"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
     "Vision__OpenRouter__TimeoutSeconds": "45",
-    "Vision__OpenRouter__MaxTokens": "350",
+    "Vision__OpenRouter__MaxTokens": "2000",
     "Vision__OpenRouter__MaxResponseBodyBytes": "262144",
+    "Vision__OpenRouter__MaxConcurrentRequests": "4",
 }
 
-CATALOGUE_KEYS = (
-    "Vision__CatalogueLearning__CategoryAwareInferenceEnabled",
-    "Vision__CatalogueLearning__CandidateLearningEnabled",
-    "Vision__CatalogueLearning__AdminReviewEnabled",
-    "Vision__CatalogueLearning__ManufacturerLookupEnabled",
-)
+# Category-aware inference is on; candidate learning / admin review / manufacturer lookup stay dark.
+CATALOGUE_EXPECTED = {
+    "Vision__CatalogueLearning__CategoryAwareInferenceEnabled": "true",
+    "Vision__CatalogueLearning__CandidateLearningEnabled": "false",
+    "Vision__CatalogueLearning__AdminReviewEnabled": "false",
+    "Vision__CatalogueLearning__ManufacturerLookupEnabled": "false",
+}
+
+# API-only gate for mandatory customer confirmation; must not appear on worker/scheduler.
+CONFIRMATION_ACTIVATION_KEY = "Vision__ConfirmationReview__ActivationEnabled"
 
 
 class Failures(list[str]):
@@ -165,12 +171,39 @@ def secret_ref_key(env_val: Any) -> str | None:
     return None
 
 
-def assert_catalogue_learning_false(
+def assert_catalogue_learning_contract(
     f: Failures, label: str, be: dict[str, Any], pe: dict[str, Any], se: dict[str, Any]
 ) -> None:
     for env_map, role in ((be, "API"), (pe, "processor"), (se, "scheduler")):
-        for key in CATALOGUE_KEYS:
-            f.check(env_map.get(key) == "false", f"{label}: {role} {key} false")
+        for key, expected in CATALOGUE_EXPECTED.items():
+            f.check(
+                env_map.get(key) == expected,
+                f"{label}: {role} {key} == {expected!r} (got {env_map.get(key)!r})",
+            )
+
+
+def assert_confirmation_activation_contract(
+    f: Failures,
+    label: str,
+    be: dict[str, Any],
+    pe: dict[str, Any],
+    se: dict[str, Any],
+    *,
+    api_expected: str,
+) -> None:
+    f.check(
+        be.get(CONFIRMATION_ACTIVATION_KEY) == api_expected,
+        f"{label}: API {CONFIRMATION_ACTIVATION_KEY} == {api_expected!r} "
+        f"(got {be.get(CONFIRMATION_ACTIVATION_KEY)!r})",
+    )
+    f.check(
+        CONFIRMATION_ACTIVATION_KEY not in pe,
+        f"{label}: processor must not receive {CONFIRMATION_ACTIVATION_KEY}",
+    )
+    f.check(
+        CONFIRMATION_ACTIVATION_KEY not in se,
+        f"{label}: scheduler must not receive {CONFIRMATION_ACTIVATION_KEY}",
+    )
 
 
 def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
@@ -198,7 +231,8 @@ def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) ->
     f.check(pe.get("Vision__Provider") == "OpenRouter", f"{label}: processor provider OpenRouter")
     f.check(se.get("Vision__Media__RetentionWorkerEnabled") == "true", f"{label}: retention on")
 
-    assert_catalogue_learning_false(f, label, be, pe, se)
+    assert_catalogue_learning_contract(f, label, be, pe, se)
+    assert_confirmation_activation_contract(f, label, be, pe, se, api_expected="true")
 
 
 def assert_staging_production_vision_contract(
@@ -366,7 +400,7 @@ def assert_migration_enabled(f: Failures, docs: list[dict[str, Any]]) -> None:
     if jobs:
         f.check(
             container_image(jobs[0]) == f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
-            "production: migrator image must be 0.121.1",
+            "production: migrator image must be 0.121.2",
         )
 
 
@@ -417,7 +451,15 @@ def main() -> int:
         assert_active_vision(failures, label, docs)
     print("PASS active Vision gates (default + staging + production)")
     print("PASS API Fake / includeConsumer false / hub false (all three)")
-    print("PASS catalogue-learning false (all three)")
+    print(
+        "PASS catalogue-learning contract "
+        "(categoryAware=true; candidate/admin/manufacturer=false) "
+        "on API/processor/scheduler (default + staging + production)"
+    )
+    print(
+        "PASS confirmation-review activation true on API only "
+        "(absent from processor/scheduler) (default + staging + production)"
+    )
 
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
     print("PASS staging/production Vision__* env contract identical (API/processor/scheduler)")
@@ -456,6 +498,7 @@ def main() -> int:
                         },
                         "provider": {"processor": "Fake"},
                         "media": {"retentionWorkerEnabled": False},
+                        "confirmationReview": {"activationEnabled": False},
                     }
                 }
             },
@@ -483,12 +526,193 @@ def main() -> int:
         failures.check(be.get("Vision__Analysis__HubEnabled") == "false", "rollback: hubEnabled false")
         assert_processor(failures, "rollback", rollback_docs, activated=False)
         assert_scheduler(failures, "rollback", rollback_docs, retention=False)
-        assert_catalogue_learning_false(failures, "rollback", be, pe, se)
+        assert_catalogue_learning_contract(failures, "rollback", be, pe, se)
+        assert_confirmation_activation_contract(
+            failures, "rollback", be, pe, se, api_expected="false"
+        )
         print("PASS rollback/dark override returns messaging/provider/retention to off/Fake")
-        print("PASS catalogue-learning remains false under rollback")
+        print(
+            "PASS catalogue-learning contract unchanged under messaging/provider/retention rollback "
+            "(categoryAware=true; candidate/admin/manufacturer=false)"
+        )
+        print(
+            "PASS confirmation-review activation false on API under rollback "
+            "(still absent from processor/scheduler)"
+        )
 
         assert_no_openrouter_on_others(failures, "rollback", rollback_docs)
         assert_openrouter_externalsecret(failures, "rollback", rollback_docs)
+
+        # Mutation self-test: deliberately wrong concurrency must fail OPENROUTER_BOUNDS checks.
+        wrong_concurrency_override = tmp_path / "wrong-concurrency.yaml"
+        write_override(
+            wrong_concurrency_override,
+            {
+                "features": {
+                    "vision": {
+                        "openRouter": {
+                            "maxConcurrentRequests": 99,
+                        }
+                    }
+                }
+            },
+        )
+        try:
+            wrong_render = helm_template(
+                "trm-mut-concurrency",
+                [VALUES_DEFAULT],
+                extra_values_file=wrong_concurrency_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        mut_failures = Failures()
+        assert_processor(mut_failures, "mutation-concurrency", load_docs(wrong_render), activated=True)
+        concurrency_rejected = any(
+            "Vision__OpenRouter__MaxConcurrentRequests" in msg and "== '4'" in msg
+            for msg in mut_failures
+        )
+        failures.check(
+            concurrency_rejected,
+            "mutation self-test: wrong MaxConcurrentRequests must be rejected by OPENROUTER_BOUNDS",
+        )
+        print("PASS mutation self-test rejects wrong MaxConcurrentRequests")
+
+        # Mutation self-test: flipping category-aware off must fail CATALOGUE_EXPECTED.
+        wrong_catalogue_override = tmp_path / "wrong-catalogue.yaml"
+        write_override(
+            wrong_catalogue_override,
+            {
+                "features": {
+                    "vision": {
+                        "catalogueLearning": {
+                            "categoryAwareInferenceEnabled": False,
+                        }
+                    }
+                }
+            },
+        )
+        try:
+            wrong_catalogue_render = helm_template(
+                "trm-mut-catalogue",
+                [VALUES_DEFAULT],
+                extra_values_file=wrong_catalogue_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        cat_docs = load_docs(wrong_catalogue_render)
+        cat_be = container_env(find_docs(cat_docs, "Deployment", "tranzr-service")[0])
+        cat_pe = container_env(find_docs(cat_docs, "Deployment", "worker-processor")[0])
+        cat_se = container_env(find_docs(cat_docs, "Deployment", "worker-scheduler")[0])
+        cat_mut_failures = Failures()
+        assert_catalogue_learning_contract(
+            cat_mut_failures, "mutation-catalogue", cat_be, cat_pe, cat_se
+        )
+        catalogue_rejected = any(
+            "Vision__CatalogueLearning__CategoryAwareInferenceEnabled" in msg
+            and "== 'true'" in msg
+            for msg in cat_mut_failures
+        )
+        failures.check(
+            catalogue_rejected,
+            "mutation self-test: categoryAwareInferenceEnabled=false must be rejected by CATALOGUE_EXPECTED",
+        )
+        print("PASS mutation self-test rejects categoryAwareInferenceEnabled=false")
+
+        # Mutation self-test: confirmation activation false on API must fail contract.
+        wrong_confirmation_override = tmp_path / "wrong-confirmation.yaml"
+        write_override(
+            wrong_confirmation_override,
+            {
+                "features": {
+                    "vision": {
+                        "confirmationReview": {
+                            "activationEnabled": False,
+                        }
+                    }
+                }
+            },
+        )
+        try:
+            wrong_confirmation_render = helm_template(
+                "trm-mut-confirmation",
+                [VALUES_DEFAULT],
+                extra_values_file=wrong_confirmation_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        conf_docs = load_docs(wrong_confirmation_render)
+        conf_be = container_env(find_docs(conf_docs, "Deployment", "tranzr-service")[0])
+        conf_pe = container_env(find_docs(conf_docs, "Deployment", "worker-processor")[0])
+        conf_se = container_env(find_docs(conf_docs, "Deployment", "worker-scheduler")[0])
+        conf_mut_failures = Failures()
+        assert_confirmation_activation_contract(
+            conf_mut_failures,
+            "mutation-confirmation",
+            conf_be,
+            conf_pe,
+            conf_se,
+            api_expected="true",
+        )
+        confirmation_rejected = any(
+            CONFIRMATION_ACTIVATION_KEY in msg and "== 'true'" in msg
+            for msg in conf_mut_failures
+        )
+        failures.check(
+            confirmation_rejected,
+            "mutation self-test: confirmation activationEnabled=false must be rejected "
+            "by confirmation activation contract",
+        )
+        print("PASS mutation self-test rejects confirmation activationEnabled=false")
+
+        # Mutation self-test: missing confirmation activation key on API must fail contract.
+        missing_conf_docs = copy.deepcopy(default_docs)
+        missing_api_doc = find_docs(missing_conf_docs, "Deployment", "tranzr-service")[0]
+        missing_containers = (
+            ((missing_api_doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+        ).get("containers") or []
+        failures.check(
+            bool(missing_containers),
+            "mutation self-test: missing-key fixture must retain API containers",
+        )
+        if missing_containers:
+            missing_containers[0]["env"] = [
+                item
+                for item in (missing_containers[0].get("env") or [])
+                if item.get("name") != CONFIRMATION_ACTIVATION_KEY
+            ]
+        miss_be = container_env(missing_api_doc)
+        miss_pe = container_env(
+            find_docs(missing_conf_docs, "Deployment", "worker-processor")[0]
+        )
+        miss_se = container_env(
+            find_docs(missing_conf_docs, "Deployment", "worker-scheduler")[0]
+        )
+        failures.check(
+            CONFIRMATION_ACTIVATION_KEY not in miss_be,
+            "mutation self-test: fixture must omit API confirmation activation key",
+        )
+        miss_mut_failures = Failures()
+        assert_confirmation_activation_contract(
+            miss_mut_failures,
+            "mutation-confirmation-missing",
+            miss_be,
+            miss_pe,
+            miss_se,
+            api_expected="true",
+        )
+        confirmation_missing_rejected = any(
+            CONFIRMATION_ACTIVATION_KEY in msg and "== 'true'" in msg
+            for msg in miss_mut_failures
+        )
+        failures.check(
+            confirmation_missing_rejected,
+            "mutation self-test: missing confirmation activation key must be rejected "
+            "by confirmation activation contract",
+        )
+        print("PASS mutation self-test rejects missing confirmation activation key")
 
     for path in (
         VALUES_DEFAULT,
