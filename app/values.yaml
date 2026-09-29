@@ -20,7 +20,9 @@ features:
   # Env is injected via helpers outside deployments.*.env so production list
   # replacement cannot drop it. Env-specific files override only real differences.
   # Never put secret values here; OpenRouter key is AKV-only.
-  # Keep includeConsumer / hub / catalogueLearning false for V1.
+  # includeConsumer and hub remain false; category-aware inference is true;
+  # candidate learning / admin review / manufacturer lookup remain false;
+  # confirmation-review activation is true (API-owned, required for customer confirm).
   vision:
     analysis:
       # When true, the API publishes Vision analysis jobs to RabbitMQ.
@@ -45,9 +47,11 @@ features:
       # Per-provider-request timeout in seconds.
       timeoutSeconds: 45
       # Maximum generated output tokens per request.
-      maxTokens: 350
+      maxTokens: 2000
       # Hard limit on provider response payload size (bytes).
       maxResponseBodyBytes: 262144
+      # Caps simultaneous per-image processor requests to OpenRouter.
+      maxConcurrentRequests: 4
     media:
       # Dedicated private Azure Blob container for Vision media.
       container: quote-media-vision
@@ -68,7 +72,7 @@ features:
       # Maximum records handled per sweep.
       sweeperBatchSize: 100
     catalogueLearning:
-      # Adds curated catalogue category context to model prompting; keep false for V1.
+      # Supplies curated category context; required true for category-aware V2 inference.
       categoryAwareInferenceEnabled: true
       # Emits/ingests model-observed candidate catalogue data; keep false for V1.
       candidateLearningEnabled: false
@@ -76,6 +80,9 @@ features:
       adminReviewEnabled: false
       # Reserved gate for manufacturer enrichment/lookup; keep false for V1.
       manufacturerLookupEnabled: false
+    confirmationReview:
+      # API owns this gate; true is required for the mandatory customer confirmation boundary.
+      activationEnabled: true
 
 # Namespace override
 namespaceOverride: "tranzr-moves"
@@ -95,7 +102,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.121.1"
+  movesVersion: "0.121.2"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
