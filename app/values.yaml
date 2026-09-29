@@ -102,7 +102,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.121.3"
+  movesVersion: "0.121.4"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -313,7 +313,8 @@ deployments:
         memory: 256Mi
       limits:
         cpu: 500m
-        memory: 512Mi
+        # CI still gates normalization at 512MiB; 768MiB adds runtime-variation headroom.
+        memory: 768Mi
 
     # Probes configuration
     livenessProbe:
