@@ -100,6 +100,17 @@ jobs:
           TF_VAR_production_cluster_server: ${{ secrets.HETZNER_PROD_CLUSTER_SERVER }}
         run: terraform apply -auto-approve
 
+      - name: Verify staging Argo rollout
+        if: github.event_name == 'repository_dispatch' && github.event.action == 'deploy-argocd-stg'
+        env:
+          ARGOCD_ADMIN_PASSWORD: ${{ secrets.ARGOCD_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          PYTHONDONTWRITEBYTECODE=1 python3 app/scripts/test_verify_staging_rollout.py
+          PYTHONDONTWRITEBYTECODE=1 python3 app/scripts/verify_staging_rollout.py \
+            --expected-revision "$revision"
+
       - name: Deployment Summary
         run: |
           echo "🎯 **ArgoCD ApplicationSets Deployment Complete!**" >> $GITHUB_STEP_SUMMARY
