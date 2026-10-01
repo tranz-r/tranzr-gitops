@@ -476,6 +476,60 @@ deployments:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
+  # Dedicated queued image-normalization role. Dark in shared/default and production;
+  # staging alone enables it in values-staging.yaml for the first safe rollout.
+  workerVisionNormalizer:
+    name: tranzr-moves-worker-vision-normalizer
+    enabled: false
+    replicaCount: 1
+    normalization:
+      # Keep API verification on the existing synchronous path in this slice.
+      intakeMode: LegacySync
+      messagingEnabled: true
+      apiIncludeConsumer: false
+      apiConsumerReady: false
+      workerIncludeConsumer: true
+      workerConsumerReady: true
+      queueName: vision-normalization-v1
+      spoolDirectory: /var/spool/tranzr/vision-normalization
+      spoolQuotaBytes: "2147483648"
+      spoolFreeSpaceHeadroomBytes: "536870912"
+    envFromSecrets:
+      - name: ConnectionStrings__TranzrMovesDatabaseConnection
+        secretKey: tranzr-supabase-database-connection-string
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+        ephemeral-storage: 2560Mi
+    spool:
+      volumeName: vision-normalization-spool
+      sizeLimit: 2560Mi
+    livenessProbe:
+      exec:
+        command: ["/bin/sh", "-c", "kill -0 1"]
+      initialDelaySeconds: 30
+      periodSeconds: 15
+      timeoutSeconds: 2
+      failureThreshold: 3
+    readinessProbe:
+      exec:
+        command: ["/bin/sh", "-c", "kill -0 1"]
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 2
+      failureThreshold: 3
+    startupProbe:
+      exec:
+        command: ["/bin/sh", "-c", "kill -0 1"]
+      periodSeconds: 5
+      timeoutSeconds: 2
+      failureThreshold: 24
+
   notifications:
     name: tranzr-moves-notifications
     enabled: true
