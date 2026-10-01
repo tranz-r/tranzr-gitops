@@ -59,15 +59,12 @@ observability:
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
 deployments:
-  # First activation step: pause new normalization intake and atomically move
-  # durable fleet authority from LegacySync to IntakePaused. The API alone owns
-  # this replay-safe operation; the dedicated worker only asserts the target.
+  # Stable paused state after the durable LegacySync -> IntakePaused transition.
+  # API and normalizer assert the target; no workload owns a transition command.
   workerVisionNormalizer:
     enabled: true
     normalization:
       intakeMode: IntakePaused
-      apiTransitionFromMode: LegacySync
-      apiTransitionOperationId: staging-vision-normalization-pause-v1
   workerScheduler:
     e2eDataPurge:
       Enabled: true
