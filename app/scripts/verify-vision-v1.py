@@ -25,7 +25,7 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
-STAGING_VERSION = "0.122.1"
+STAGING_VERSION = "0.122.2"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
