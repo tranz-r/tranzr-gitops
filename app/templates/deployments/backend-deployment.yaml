@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: {{ .Values.deployments.backend.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  {{- if .Values.deployments.workerVisionNormalizer.enabled }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  {{- end }}
   labels:
     app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
