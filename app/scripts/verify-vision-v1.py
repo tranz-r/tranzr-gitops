@@ -26,6 +26,7 @@ VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
 STAGING_VERSION = "0.122.3"
+ASYNC_TRANSITION_OPERATION_ID = "staging-vision-normalization-async-v1"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -222,6 +223,12 @@ def assert_staging_normalization_contract(
     env = container_env(normalizer)
 
     f.check(spec.get("replicas") == 1, "staging: VisionNormalizer replicas must equal 1")
+    f.check(
+        ((normalizer.get("metadata") or {}).get("annotations") or {}).get(
+            "argocd.argoproj.io/sync-wave"
+        ) == "1",
+        "staging: VisionNormalizer must start in Argo sync wave 1",
+    )
     processors = find_docs(docs, "Deployment", "worker-processor")
     if processors:
         f.check(
@@ -231,7 +238,7 @@ def assert_staging_normalization_contract(
     f.check(env.get("Worker__Role") == "VisionNormalizer", "staging: VisionNormalizer worker role")
 
     expected = {
-        "Vision__Normalization__IntakeMode": "IntakePaused",
+        "Vision__Normalization__IntakeMode": "AsyncQueue",
         "Vision__Normalization__MessagingEnabled": "true",
         "Vision__Normalization__IncludeConsumer": "true",
         "Vision__Normalization__ConsumerReady": "true",
@@ -307,21 +314,28 @@ def assert_staging_normalization_contract(
     if backend:
         be = container_env(backend[0])
         api_expected = {
-            "Vision__Normalization__IntakeMode": "IntakePaused",
+            "Vision__Normalization__IntakeMode": "AsyncQueue",
             "Vision__Normalization__MessagingEnabled": "true",
             "Vision__Normalization__IncludeConsumer": "false",
-            "Vision__Normalization__ConsumerReady": "false",
+            "Vision__Normalization__ConsumerReady": "true",
             "Vision__Normalization__QueueName": NORMALIZATION_QUEUE,
         }
         for key, value in api_expected.items():
             f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
         f.check(
-            "Vision__Normalization__TransitionFromMode" not in be,
-            "staging: stable paused API must not own a transition source",
+            be.get("Vision__Normalization__TransitionFromMode") == "IntakePaused",
+            "staging: API must own the IntakePaused -> AsyncQueue transition",
         )
         f.check(
-            "Vision__Normalization__TransitionOperationId" not in be,
-            "staging: stable paused API must not own a transition operation ID",
+            be.get("Vision__Normalization__TransitionOperationId")
+            == ASYNC_TRANSITION_OPERATION_ID,
+            "staging: API must carry the bounded async transition operation ID",
+        )
+        f.check(
+            (((backend[0].get("metadata") or {}).get("annotations") or {}).get(
+                "argocd.argoproj.io/sync-wave"
+            )) == "0",
+            "staging: API transition owner must complete in Argo sync wave 0",
         )
         for key in (
             "Vision__Normalization__SpoolDirectory",

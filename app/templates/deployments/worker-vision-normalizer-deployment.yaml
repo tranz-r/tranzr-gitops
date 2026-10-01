@@ -5,6 +5,8 @@ kind: Deployment
 metadata:
   name: {{ $worker.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
   labels:
     app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
     app.kubernetes.io/instance: {{ .Release.Name }}
