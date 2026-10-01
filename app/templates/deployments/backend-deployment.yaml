@@ -78,10 +78,18 @@ spec:
             # list replacement cannot drop dark gates or activation toggles.
             {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
             {{- if .Values.deployments.workerVisionNormalizer.enabled }}
-            # Staging-only normalization producer foundation. LegacySync prevents
-            # enqueue in this first rollout; the API never hosts the consumer.
+            # Staging-only normalization producer contract. Intake mode controls
+            # enqueue; the API never hosts the normalization consumer.
             - name: Vision__Normalization__IntakeMode
               value: {{ .Values.deployments.workerVisionNormalizer.normalization.intakeMode | quote }}
+            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionFromMode }}
+            - name: Vision__Normalization__TransitionFromMode
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionOperationId }}
+            - name: Vision__Normalization__TransitionOperationId
+              value: {{ . | quote }}
+            {{- end }}
             - name: Vision__Normalization__MessagingEnabled
               value: {{ .Values.deployments.workerVisionNormalizer.normalization.messagingEnabled | quote }}
             - name: Vision__Normalization__IncludeConsumer

@@ -483,8 +483,12 @@ deployments:
     enabled: false
     replicaCount: 1
     normalization:
-      # Keep API verification on the existing synchronous path in this slice.
+      # Keep API verification on the existing synchronous path until staging activation.
       intakeMode: LegacySync
+      # One-shot API-owned deployment transition. Both fields are empty in stable
+      # revisions and must be removed immediately after durable target verification.
+      apiTransitionFromMode: ""
+      apiTransitionOperationId: ""
       messagingEnabled: true
       apiIncludeConsumer: false
       apiConsumerReady: false

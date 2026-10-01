@@ -8,7 +8,7 @@ fullnameOverride: "trm-stg"
 # Staging-only release with the dedicated VisionNormalizer role. Production remains
 # pinned independently in values-production.yaml / the shared production gate.
 images:
-  movesVersion: "0.122.2"
+  movesVersion: "0.122.3"
 
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
@@ -59,10 +59,15 @@ observability:
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
 deployments:
-  # Initial normalization rollout: deploy the isolated consumer while the API
-  # remains LegacySync. No intake-mode transition is requested by this slice.
+  # First activation step: pause new normalization intake and atomically move
+  # durable fleet authority from LegacySync to IntakePaused. The API alone owns
+  # this replay-safe operation; the dedicated worker only asserts the target.
   workerVisionNormalizer:
     enabled: true
+    normalization:
+      intakeMode: IntakePaused
+      apiTransitionFromMode: LegacySync
+      apiTransitionOperationId: staging-vision-normalization-pause-v1
   workerScheduler:
     e2eDataPurge:
       Enabled: true
