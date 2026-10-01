@@ -25,6 +25,7 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
+STAGING_VERSION = "0.122.0"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -618,7 +619,10 @@ def main() -> int:
     staging_backend = find_docs(staging_docs, "Deployment", "tranzr-service")
     if staging_backend:
         img = container_image(staging_backend[0])
-        failures.check(bool(img), "staging: backend image must render")
+        failures.check(
+            img == f"ghcr.io/tranz-r/tranzr-moves-services:{STAGING_VERSION}",
+            f"staging: backend image {img!r} != compatible release {STAGING_VERSION!r}",
+        )
         print(f"PASS staging image renders ({img})")
 
     # Shared baseline activates Vision in default, staging, and production.
