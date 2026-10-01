@@ -26,7 +26,6 @@ VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
 STAGING_VERSION = "0.122.3"
-ASYNC_TRANSITION_OPERATION_ID = "staging-vision-normalization-async-v1"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -323,13 +322,12 @@ def assert_staging_normalization_contract(
         for key, value in api_expected.items():
             f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
         f.check(
-            be.get("Vision__Normalization__TransitionFromMode") == "IntakePaused",
-            "staging: API must own the IntakePaused -> AsyncQueue transition",
+            "Vision__Normalization__TransitionFromMode" not in be,
+            "staging: stable async API must not own a transition source",
         )
         f.check(
-            be.get("Vision__Normalization__TransitionOperationId")
-            == ASYNC_TRANSITION_OPERATION_ID,
-            "staging: API must carry the bounded async transition operation ID",
+            "Vision__Normalization__TransitionOperationId" not in be,
+            "staging: stable async API must not own a transition operation ID",
         )
         f.check(
             (((backend[0].get("metadata") or {}).get("annotations") or {}).get(
