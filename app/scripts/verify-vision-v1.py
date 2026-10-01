@@ -25,7 +25,8 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
-STAGING_VERSION = "0.122.2"
+STAGING_VERSION = "0.122.3"
+PAUSE_TRANSITION_OPERATION_ID = "staging-vision-normalization-pause-v1"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -231,7 +232,7 @@ def assert_staging_normalization_contract(
     f.check(env.get("Worker__Role") == "VisionNormalizer", "staging: VisionNormalizer worker role")
 
     expected = {
-        "Vision__Normalization__IntakeMode": "LegacySync",
+        "Vision__Normalization__IntakeMode": "IntakePaused",
         "Vision__Normalization__MessagingEnabled": "true",
         "Vision__Normalization__IncludeConsumer": "true",
         "Vision__Normalization__ConsumerReady": "true",
@@ -244,7 +245,11 @@ def assert_staging_normalization_contract(
         f.check(env.get(key) == value, f"staging: normalizer {key} == {value!r}")
     f.check(
         "Vision__Normalization__TransitionFromMode" not in env,
-        "staging: normalizer must not request a mode transition",
+        "staging: normalizer must not own the mode-transition source",
+    )
+    f.check(
+        "Vision__Normalization__TransitionOperationId" not in env,
+        "staging: normalizer must not own the mode-transition operation ID",
     )
 
     secret_env = {
@@ -303,7 +308,7 @@ def assert_staging_normalization_contract(
     if backend:
         be = container_env(backend[0])
         api_expected = {
-            "Vision__Normalization__IntakeMode": "LegacySync",
+            "Vision__Normalization__IntakeMode": "IntakePaused",
             "Vision__Normalization__MessagingEnabled": "true",
             "Vision__Normalization__IncludeConsumer": "false",
             "Vision__Normalization__ConsumerReady": "false",
@@ -312,8 +317,13 @@ def assert_staging_normalization_contract(
         for key, value in api_expected.items():
             f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
         f.check(
-            "Vision__Normalization__TransitionFromMode" not in be,
-            "staging: API must remain LegacySync without a mode transition",
+            be.get("Vision__Normalization__TransitionFromMode") == "LegacySync",
+            "staging: API must own the LegacySync -> IntakePaused transition",
+        )
+        f.check(
+            be.get("Vision__Normalization__TransitionOperationId")
+            == PAUSE_TRANSITION_OPERATION_ID,
+            "staging: API must carry the bounded replay-safe transition operation ID",
         )
         for key in (
             "Vision__Normalization__SpoolDirectory",
