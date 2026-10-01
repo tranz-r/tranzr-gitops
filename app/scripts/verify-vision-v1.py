@@ -25,8 +25,14 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
+STAGING_VERSION = "0.122.0"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
+NORMALIZATION_QUEUE = "vision-normalization-v1"
+NORMALIZATION_SPOOL_DIRECTORY = "/var/spool/tranzr/vision-normalization"
+NORMALIZATION_SPOOL_QUOTA_BYTES = "2147483648"
+NORMALIZATION_SPOOL_HEADROOM_BYTES = "536870912"
+NORMALIZATION_ENV_PREFIX = "Vision__Normalization__"
 
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
@@ -165,6 +171,170 @@ def container_image(doc: dict[str, Any]) -> str:
     return containers[0].get("image") or ""
 
 
+def pod_spec(doc: dict[str, Any]) -> dict[str, Any]:
+    return (((doc.get("spec") or {}).get("template") or {}).get("spec") or {})
+
+
+def first_container(doc: dict[str, Any]) -> dict[str, Any]:
+    containers = pod_spec(doc).get("containers") or []
+    return containers[0] if containers else {}
+
+
+def normalization_env(env: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in env.items() if key.startswith(NORMALIZATION_ENV_PREFIX)}
+
+
+def assert_no_normalization_contract(
+    f: Failures, label: str, docs: list[dict[str, Any]]
+) -> None:
+    normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
+    f.check(
+        not normalizers,
+        f"{label}: must not render a VisionNormalizer Deployment",
+    )
+    for role, name_substr in (
+        ("API", "tranzr-service"),
+        ("processor", "worker-processor"),
+        ("scheduler", "worker-scheduler"),
+    ):
+        matches = find_docs(docs, "Deployment", name_substr)
+        if not matches:
+            continue
+        got = normalization_env(container_env(matches[0]))
+        f.check(
+            not got,
+            f"{label}: {role} must not receive Vision__Normalization__* env (got {got!r})",
+        )
+
+
+def assert_staging_normalization_contract(
+    f: Failures, docs: list[dict[str, Any]]
+) -> None:
+    normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
+    f.check(len(normalizers) == 1, "staging: expected exactly one VisionNormalizer Deployment")
+    if not normalizers:
+        return
+
+    normalizer = normalizers[0]
+    spec = normalizer.get("spec") or {}
+    pod = pod_spec(normalizer)
+    container = first_container(normalizer)
+    env = container_env(normalizer)
+
+    f.check(spec.get("replicas") == 1, "staging: VisionNormalizer replicas must equal 1")
+    processors = find_docs(docs, "Deployment", "worker-processor")
+    if processors:
+        f.check(
+            container_image(normalizer) == container_image(processors[0]),
+            "staging: VisionNormalizer must use the movesWorker image",
+        )
+    f.check(env.get("Worker__Role") == "VisionNormalizer", "staging: VisionNormalizer worker role")
+
+    expected = {
+        "Vision__Normalization__IntakeMode": "LegacySync",
+        "Vision__Normalization__MessagingEnabled": "true",
+        "Vision__Normalization__IncludeConsumer": "true",
+        "Vision__Normalization__ConsumerReady": "true",
+        "Vision__Normalization__QueueName": NORMALIZATION_QUEUE,
+        "Vision__Normalization__SpoolDirectory": NORMALIZATION_SPOOL_DIRECTORY,
+        "Vision__Normalization__SpoolQuotaBytes": NORMALIZATION_SPOOL_QUOTA_BYTES,
+        "Vision__Normalization__SpoolFreeSpaceHeadroomBytes": NORMALIZATION_SPOOL_HEADROOM_BYTES,
+    }
+    for key, value in expected.items():
+        f.check(env.get(key) == value, f"staging: normalizer {key} == {value!r}")
+    f.check(
+        "Vision__Normalization__TransitionFromMode" not in env,
+        "staging: normalizer must not request a mode transition",
+    )
+
+    secret_env = {
+        key: secret_ref_key(value)
+        for key, value in env.items()
+        if isinstance(value, dict) and secret_ref_key(value) is not None
+    }
+    expected_secret_env = {
+        "ConnectionStrings__TranzrMovesDatabaseConnection": "tranzr-supabase-database-connection-string",
+        "RABBITMQ_PASSWORD": "platform-rabbitmq-password",
+        "AZURE_STORAGE_CONNECTION_STRING": AZURE_STORAGE_SECRET_KEY,
+    }
+    f.check(
+        secret_env == expected_secret_env,
+        f"staging: normalizer secret scope mismatch (got {secret_env!r})",
+    )
+    for forbidden in ("STRIPE_API_KEY", "REDIS_PASSWORD", "OPENROUTER_API_KEY"):
+        f.check(forbidden not in env, f"staging: normalizer must not receive {forbidden}")
+
+    command_blob = "\n".join(
+        str(item) for item in ((container.get("command") or []) + (container.get("args") or []))
+    )
+    f.check(
+        "ConnectionStrings__rabbitmq" in command_blob and "RABBITMQ_PASSWORD" in command_blob,
+        "staging: normalizer must construct the RabbitMQ connection string from platform config",
+    )
+    f.check("ConnectionStrings__redis" not in command_blob, "staging: normalizer must not configure Redis")
+
+    resources = container.get("resources") or {}
+    limits = resources.get("limits") or {}
+    f.check(limits.get("memory") == "1Gi", "staging: normalizer memory limit must equal 1Gi")
+
+    mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
+    volumes = {v.get("name"): v for v in (pod.get("volumes") or [])}
+    spool_mount = mounts.get("vision-normalization-spool") or {}
+    spool_volume = volumes.get("vision-normalization-spool") or {}
+    f.check(
+        spool_mount.get("mountPath") == NORMALIZATION_SPOOL_DIRECTORY,
+        "staging: normalizer spool volume mount path",
+    )
+    f.check(
+        (spool_volume.get("emptyDir") or {}).get("sizeLimit") == "2560Mi",
+        "staging: normalizer emptyDir spool sizeLimit must equal quota plus headroom (2560Mi)",
+    )
+
+    for probe_name in ("livenessProbe", "readinessProbe", "startupProbe"):
+        probe = container.get(probe_name) or {}
+        command = (probe.get("exec") or {}).get("command") or []
+        f.check(bool(command), f"staging: normalizer {probe_name} must use an exec process probe")
+        f.check("httpGet" not in probe and "tcpSocket" not in probe,
+                f"staging: normalizer {probe_name} must not use an HTTP/TCP probe")
+        f.check("kill -0 1" in " ".join(str(part) for part in command),
+                f"staging: normalizer {probe_name} must check the worker process")
+
+    backend = find_docs(docs, "Deployment", "tranzr-service")
+    if backend:
+        be = container_env(backend[0])
+        api_expected = {
+            "Vision__Normalization__IntakeMode": "LegacySync",
+            "Vision__Normalization__MessagingEnabled": "true",
+            "Vision__Normalization__IncludeConsumer": "false",
+            "Vision__Normalization__ConsumerReady": "false",
+            "Vision__Normalization__QueueName": NORMALIZATION_QUEUE,
+        }
+        for key, value in api_expected.items():
+            f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
+        f.check(
+            "Vision__Normalization__TransitionFromMode" not in be,
+            "staging: API must remain LegacySync without a mode transition",
+        )
+        for key in (
+            "Vision__Normalization__SpoolDirectory",
+            "Vision__Normalization__SpoolQuotaBytes",
+            "Vision__Normalization__SpoolFreeSpaceHeadroomBytes",
+        ):
+            f.check(key not in be, f"staging: API must not receive worker-only {key}")
+
+    for role, name_substr in (
+        ("processor", "worker-processor"),
+        ("scheduler", "worker-scheduler"),
+    ):
+        matches = find_docs(docs, "Deployment", name_substr)
+        if matches:
+            got = normalization_env(container_env(matches[0]))
+            f.check(
+                not got,
+                f"staging: existing {role} must not become a normalization consumer (got {got!r})",
+            )
+
+
 def secret_ref_key(env_val: Any) -> str | None:
     if isinstance(env_val, dict):
         return env_val.get("key")
@@ -238,7 +408,7 @@ def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) ->
 def assert_staging_production_vision_contract(
     f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
 ) -> None:
-    """Staging and production must render the same Vision__* env contract."""
+    """Staging and production keep parity for the pre-existing Vision env contract."""
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -249,8 +419,18 @@ def assert_staging_production_vision_contract(
         f.check(len(stg) == 1 and len(prod) == 1, f"contract: {role} Deployments present")
         if not (stg and prod):
             continue
-        stg_contract = vision_env_contract(stg[0])
-        prod_contract = vision_env_contract(prod[0])
+        # The queued normalization foundation is intentionally staging-only;
+        # all pre-existing Vision contracts must retain staging/prod parity.
+        stg_contract = {
+            key: value
+            for key, value in vision_env_contract(stg[0]).items()
+            if not key.startswith(NORMALIZATION_ENV_PREFIX)
+        }
+        prod_contract = {
+            key: value
+            for key, value in vision_env_contract(prod[0]).items()
+            if not key.startswith(NORMALIZATION_ENV_PREFIX)
+        }
         f.check(
             stg_contract == prod_contract,
             f"contract: staging vs production {role} Vision__* env mismatch "
@@ -439,7 +619,10 @@ def main() -> int:
     staging_backend = find_docs(staging_docs, "Deployment", "tranzr-service")
     if staging_backend:
         img = container_image(staging_backend[0])
-        failures.check(bool(img), "staging: backend image must render")
+        failures.check(
+            img == f"ghcr.io/tranz-r/tranzr-moves-services:{STAGING_VERSION}",
+            f"staging: backend image {img!r} != compatible release {STAGING_VERSION!r}",
+        )
         print(f"PASS staging image renders ({img})")
 
     # Shared baseline activates Vision in default, staging, and production.
@@ -462,7 +645,15 @@ def main() -> int:
     )
 
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
-    print("PASS staging/production Vision__* env contract identical (API/processor/scheduler)")
+    print("PASS staging/production pre-normalization Vision__* env contract identical")
+
+    # Normalization is a staging-only deployment foundation. Default and production
+    # remain byte-for-byte dark with respect to the new workload and env contract.
+    assert_no_normalization_contract(failures, "default", default_docs)
+    assert_no_normalization_contract(failures, "production", production_docs)
+    assert_staging_normalization_contract(failures, staging_docs)
+    print("PASS default/production normalization contract remains absent")
+    print("PASS staging VisionNormalizer workload, isolation, spool, probes, and API producer contract")
 
     assert_prod_images(failures, production_docs)
     assert_migration_enabled(failures, production_docs)
@@ -722,7 +913,11 @@ def main() -> int:
         CHART / "templates" / "deployments" / "backend-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-processor-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-scheduler-deployment.yaml",
+        CHART / "templates" / "deployments" / "worker-vision-normalizer-deployment.yaml",
     ):
+        if not path.exists():
+            failures.check(False, f"source missing: {path}")
+            continue
         text = path.read_text(encoding="utf-8")
         failures.check("sk-or-" not in text, f"source {path.name}: must not contain sk-or- literal")
         failures.check(

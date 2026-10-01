@@ -77,6 +77,20 @@ spec:
             # Vision V1 / Photo Inventory — keep outside backend.env so production
             # list replacement cannot drop dark gates or activation toggles.
             {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
+            {{- if .Values.deployments.workerVisionNormalizer.enabled }}
+            # Staging-only normalization producer foundation. LegacySync prevents
+            # enqueue in this first rollout; the API never hosts the consumer.
+            - name: Vision__Normalization__IntakeMode
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.intakeMode | quote }}
+            - name: Vision__Normalization__MessagingEnabled
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.messagingEnabled | quote }}
+            - name: Vision__Normalization__IncludeConsumer
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.apiIncludeConsumer | quote }}
+            - name: Vision__Normalization__ConsumerReady
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.apiConsumerReady | quote }}
+            - name: Vision__Normalization__QueueName
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.queueName | quote }}
+            {{- end }}
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

@@ -1,0 +1,123 @@
+{{- if .Values.deployments.workerVisionNormalizer.enabled }}
+{{- $worker := .Values.deployments.workerVisionNormalizer }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $worker.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: worker-vision-normalizer
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $worker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: worker-vision-normalizer
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: worker-vision-normalizer
+        helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" true) | nindent 10 }}
+          env:
+            - name: Worker__Role
+              value: VisionNormalizer
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-vision-normalizer") | nindent 12 }}
+            {{- include "tranzrmoves.platformMessagingPasswordEnv" (dict "root" . "redis" false "rabbitmq" true) | nindent 12 }}
+            - name: Vision__Normalization__IntakeMode
+              value: {{ $worker.normalization.intakeMode | quote }}
+            - name: Vision__Normalization__MessagingEnabled
+              value: {{ $worker.normalization.messagingEnabled | quote }}
+            - name: Vision__Normalization__IncludeConsumer
+              value: {{ $worker.normalization.workerIncludeConsumer | quote }}
+            - name: Vision__Normalization__ConsumerReady
+              value: {{ $worker.normalization.workerConsumerReady | quote }}
+            - name: Vision__Normalization__QueueName
+              value: {{ $worker.normalization.queueName | quote }}
+            - name: Vision__Normalization__SpoolDirectory
+              value: {{ $worker.normalization.spoolDirectory | quote }}
+            - name: Vision__Normalization__SpoolQuotaBytes
+              value: {{ $worker.normalization.spoolQuotaBytes | quote }}
+            - name: Vision__Normalization__SpoolFreeSpaceHeadroomBytes
+              value: {{ $worker.normalization.spoolFreeSpaceHeadroomBytes | quote }}
+            - name: AZURE_STORAGE_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: tranzr-azure-storage-connection-string
+            {{- range $worker.envFromSecrets }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
+            {{- end }}
+          {{- with $worker.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $worker.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $worker.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $worker.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: {{ $worker.spool.volumeName }}
+              mountPath: {{ $worker.normalization.spoolDirectory }}
+      volumes:
+        - name: {{ $worker.spool.volumeName }}
+          emptyDir:
+            sizeLimit: {{ $worker.spool.sizeLimit }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
