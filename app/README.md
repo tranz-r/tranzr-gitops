@@ -242,36 +242,52 @@ Rollback to dark (values-only messaging path): set `apiMessagingEnabled` /
 to `false`. Shared image / native AsyncQueue / API MIME remain the common contract
 unless separately overridden.
 
-**Production → main merge BLOCKED (operator first-upgrade, not this PR):**
+**Candidate PreSync activation Job (this chart) — not production-actuated yet:**
+When `workerVisionNormalizer.enabled` and `intakeMode: AsyncQueue`, the chart
+renders a fixed-name Argo `PreSync` Job (`sync-wave: "2"`) after DB /
+notifications migrators and before API wave `0` / normalizer wave `1`. It runs
+`Worker__Role=VisionModeActuator` on the pinned `movesWorker` image with
+DB-only secrets (environment session/transaction pooler), deterministic
+`DeploymentIdentity=moves-<movesVersion>-<contractRevision>`, and empty stable
+API `TransitionFromMode` / `TransitionOperationId` fields. Already-durable
+`AsyncQueue` is a NOOP (no authority mutation on later releases). Rollback does
+**not** auto-downgrade durable mode.
+
+**Published-tag blocker:** `WorkerRole.VisionModeActuator` is **not** in the
+current shared pin `images.movesVersion: "0.122.6"`. This template is a
+**candidate** until a later verified backend release publishes that role and
+GitOps bumps the shared pin. Do **not** treat `0.122.6` as deployment-ready for
+activation; do **not** invent the next version here. Push/PR of this candidate
+stays blocked until that parent backend tag exists.
+
+**Production → main merge BLOCKED (schema + published role, not this PR alone):**
 Parent READONLY production schema confirms
 `tranzrmoves."VisionNormalizationRuntimeStates"` is **ABSENT**, and the adjacent
 durability tables (`VisionNormalizationJobs`, `VisionSourceNormalizations`) are
 also **ABSENT**. Production is still on image `0.121.5` without a native
 VisionNormalizer. The backend mode guard reads/writes those tables
-(`VisionNormalizationModeGuard` / `VisionNormalizationModeActivationHostedService`):
+(`VisionNormalizationModeGuard` / assert-only API activation host):
 with empty transition fields the host **asserts** configured `IntakeMode` against
 the durable row; adjacent activation is only
 `LegacySync`→`IntakePaused`→`AsyncQueue` (never a direct Legacy→Async jump).
-Missing tables make any pre-merge “complete Legacy→Paused→Async” step **impossible**
-until an intermediate image/migrator rollout creates them (foundation migration seeds
-`LegacySync`).
+Missing tables make activation **impossible** until migrators create them
+(foundation migration seeds `LegacySync`).
 
-This PR is **desired stable shared config only** (`AsyncQueue`, empty
-`TransitionFromMode` / transition operation fields). It is **not** a deployment
-promise and must not be treated as a legal production jump.
+This work is **stable shared Async config + candidate PreSync Job** only. It is
+**not** a deployment promise and must not be treated as a legal production jump.
 
-**Operator prerequisite overview (outside this repo; no invented CLI here):**
-1. First-upgrade production moves image + run migrators so the normalization
-   durability schema exists (runtime-state singleton, jobs, source-normalizations,
-   transition-operation identity) while authority remains / becomes `LegacySync`.
-2. Complete legal adjacent mode activation with one-time transition identity
-   (not permanent shared values): `LegacySync`→`IntakePaused`, drain/readiness as
-   required by the guard, then `IntakePaused`→`AsyncQueue` with messaging +
-   consumer-ready; read back durable `IntakeMode=AsyncQueue`.
-3. Only after (1)+(2) is develop→main / production apply of this stable Async
-   config unblocked. Until then, **keep production main merge blocked**.
+**Automated workflow (once a published image includes `VisionModeActuator`):**
+1. First-upgrade production moves image + migrators so normalization durability
+   schema exists while authority remains / becomes `LegacySync`.
+2. PreSync activation Job derives edge operation IDs from
+   `DeploymentIdentity` and performs legal adjacent
+   `LegacySync`→`IntakePaused`→`AsyncQueue` (drain-bounded); later releases NOOP
+   when already Async. Manual one-time transition env knobs on the API are
+   **replaced** by this Job — keep stable API transition fields empty.
+3. Only after (1)+(2) with a verified published role tag is develop→main /
+   production apply of this stable Async config unblocked.
 
-Shared image pin (backend/worker/migrator):
+Shared image pin (backend/worker/migrator) — unchanged until parent publishes:
 
 ```yaml
 images:

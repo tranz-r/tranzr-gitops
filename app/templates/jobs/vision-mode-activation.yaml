@@ -1,0 +1,121 @@
+{{- /*
+  Candidate PreSync VisionModeActuator Job.
+  Renders only for shared AsyncQueue + enabled VisionNormalizer.
+  Backend WorkerRole.VisionModeActuator is NOT in published 0.122.6 — keep
+  images.movesVersion unchanged until a verified later tag ships the role.
+*/ -}}
+{{- $job := .Values.jobs.visionModeActivation -}}
+{{- $worker := .Values.deployments.workerVisionNormalizer -}}
+{{- $norm := $worker.normalization -}}
+{{- if and $job.enabled $worker.enabled (eq $norm.intakeMode "AsyncQueue") }}
+{{- $identity := printf "moves-%s-%s" .Values.images.movesVersion $job.contractRevision -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tranzrmoves.fullname" . }}-vision-mode-activation
+  labels:
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vision-mode-activation
+  annotations:
+    # Argo ordering (authoritative): after migrators (helm weights 0/1), before API wave 0.
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    # Helm hook mirror so local helm hook semantics stay aligned with migrators.
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "2"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ $job.backoffLimit | default 1 }}
+  activeDeadlineSeconds: {{ $job.activeDeadlineSeconds | default 180 }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "tranzrmoves.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vision-mode-activation
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      restartPolicy: {{ $job.restartPolicy | default "Never" }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vision-mode-actuator
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          # DB pooler port/pool augment when set (prod transaction pooler); no Redis/Rabbit.
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" false) | nindent 10 }}
+          env:
+            - name: Worker__Role
+              value: VisionModeActuator
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            {{- include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "tranzr-moves-worker-vision-mode-actuator") | nindent 12 }}
+            # Shared Async target; edge operation IDs derive from DeploymentIdentity.
+            - name: Vision__Normalization__IntakeMode
+              value: {{ $norm.intakeMode | quote }}
+            - name: Vision__Normalization__MessagingEnabled
+              value: {{ $norm.messagingEnabled | quote }}
+            - name: Vision__Normalization__IncludeConsumer
+              value: "false"
+            - name: Vision__Normalization__ConsumerReady
+              value: {{ $norm.apiConsumerReady | quote }}
+            - name: Vision__Normalization__DeploymentIdentity
+              value: {{ $identity | quote }}
+            - name: Vision__Normalization__ActivationDrainBudgetSeconds
+              value: {{ $job.activationDrainBudgetSeconds | default 90 | quote }}
+            - name: Vision__Normalization__ActivationDrainPollSeconds
+              value: {{ $job.activationDrainPollSeconds | default 2 | quote }}
+            - name: Vision__Normalization__SpoolDirectory
+              value: "/tmp/tranzr-vision-mode-actuator"
+            {{- with $norm.queueName }}
+            - name: Vision__Normalization__QueueName
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with $norm.policyVersion }}
+            - name: Vision__Normalization__NormalizationPolicyVersion
+              value: {{ . | quote }}
+            {{- end }}
+            # Environment-matching app DB pooler (session staging / transaction prod).
+            - name: ConnectionStrings__TranzrMovesDatabaseConnection
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" (dict "name" "ConnectionStrings__TranzrMovesDatabaseConnection" "secretKey" $.Values.database.appConnectionSecretKey)) }}
+          resources:
+            {{- toYaml $job.resources | nindent 12 }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.volumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.volumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

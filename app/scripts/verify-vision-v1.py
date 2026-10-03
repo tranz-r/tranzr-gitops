@@ -2,9 +2,12 @@
 """Repository-local Vision V1 / Photo Inventory GitOps verifier.
 
 Renders Helm manifests for default/shared, staging, production (common photo
-0.122.6 / native AsyncQueue / five API MIME), and a temporary messaging
+pin / native AsyncQueue / five API MIME), and a temporary messaging
 rollback/dark override (no secrets / no cluster). Exit 0 only when all
 assertions pass.
+
+Also asserts the candidate VisionModeActuator PreSync Job contract. That role
+is not in published 0.122.6 — template is candidate-only until a later tag.
 """
 
 from __future__ import annotations
@@ -25,7 +28,43 @@ VALUES_DEFAULT = CHART / "values.yaml"
 VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
-SHARED_MOVES_VERSION = "0.122.6"
+
+def _load_default_values() -> dict[str, Any]:
+    data = yaml.safe_load(VALUES_DEFAULT.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise RuntimeError(f"values.yaml did not parse as a mapping: {VALUES_DEFAULT}")
+    return data
+
+
+def _shared_moves_version(values: dict[str, Any]) -> str:
+    version = str(((values.get("images") or {}).get("movesVersion") or "")).strip()
+    if not version:
+        raise RuntimeError("images.movesVersion missing from values.yaml")
+    return version
+
+
+def _activation_contract_revision(values: dict[str, Any]) -> str:
+    jobs = values.get("jobs") or {}
+    activation = jobs.get("visionModeActivation") or {}
+    revision = str(activation.get("contractRevision") or "").strip()
+    if not revision:
+        raise RuntimeError(
+            "jobs.visionModeActivation.contractRevision missing from values.yaml"
+        )
+    return revision
+
+
+_DEFAULT_VALUES = _load_default_values()
+SHARED_MOVES_VERSION = _shared_moves_version(_DEFAULT_VALUES)
+ACTIVATION_CONTRACT_REVISION = _activation_contract_revision(_DEFAULT_VALUES)
+ACTIVATION_DEPLOYMENT_IDENTITY = (
+    f"moves-{SHARED_MOVES_VERSION}-{ACTIVATION_CONTRACT_REVISION}"
+)
+ACTIVATION_JOB_NAME_SUBSTR = "vision-mode-activation"
+ACTIVATION_DRAIN_BUDGET_SECONDS = "90"
+ACTIVATION_DRAIN_POLL_SECONDS = "2"
+ACTIVATION_SPOOL_DIRECTORY = "/tmp/tranzr-vision-mode-actuator"
+
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -207,6 +246,11 @@ def assert_no_normalization_contract(
         not normalizers,
         f"{label}: must not render a VisionNormalizer Deployment",
     )
+    activation_jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+    f.check(
+        not activation_jobs,
+        f"{label}: must not render VisionModeActuator PreSync Job when normalizer is off",
+    )
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -219,6 +263,176 @@ def assert_no_normalization_contract(
         f.check(
             not got,
             f"{label}: {role} must not receive Vision__Normalization__* env (got {got!r})",
+        )
+
+
+def assert_no_vision_mode_activation_job(
+    f: Failures, label: str, docs: list[dict[str, Any]]
+) -> None:
+    jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+    f.check(
+        not jobs,
+        f"{label}: VisionModeActuator PreSync Job must be absent (got "
+        f"{[(((j.get('metadata') or {}).get('name'))) for j in jobs]!r})",
+    )
+
+
+def assert_vision_mode_activation_contract(
+    f: Failures, label: str, docs: list[dict[str, Any]], *, db_secret_key: str
+) -> None:
+    """Shared AsyncQueue + normalizer-on → candidate PreSync activation Job."""
+    jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+    f.check(
+        len(jobs) == 1,
+        f"{label}: expected exactly one VisionModeActuator PreSync Job "
+        f"({ACTIVATION_JOB_NAME_SUBSTR})",
+    )
+    if not jobs:
+        return
+
+    job = jobs[0]
+    meta = job.get("metadata") or {}
+    annotations = meta.get("annotations") or {}
+    spec = job.get("spec") or {}
+    pod = pod_spec(job)
+    container = first_container(job)
+    env = container_env(job)
+
+    f.check(
+        annotations.get("argocd.argoproj.io/hook") == "PreSync",
+        f"{label}: activation Job must use argocd.argoproj.io/hook=PreSync",
+    )
+    f.check(
+        annotations.get("argocd.argoproj.io/sync-wave") == "2",
+        f"{label}: activation Job sync-wave must be 2 "
+        "(after migrators weight 0/1, before API wave 0)",
+    )
+    delete_policy = annotations.get("argocd.argoproj.io/hook-delete-policy") or ""
+    f.check(
+        "BeforeHookCreation" in delete_policy and "HookSucceeded" in delete_policy,
+        f"{label}: activation Job hook-delete-policy must include "
+        f"BeforeHookCreation+HookSucceeded (got {delete_policy!r})",
+    )
+
+    f.check(spec.get("backoffLimit") == 1, f"{label}: activation backoffLimit must be 1")
+    f.check(
+        spec.get("activeDeadlineSeconds") == 180,
+        f"{label}: activation activeDeadlineSeconds must be 180",
+    )
+    f.check(
+        pod.get("restartPolicy") == "Never",
+        f"{label}: activation restartPolicy must be Never",
+    )
+    f.check(
+        pod.get("serviceAccountName"),
+        f"{label}: activation Job must use the chart service account",
+    )
+
+    processors = find_docs(docs, "Deployment", "worker-processor")
+    if processors:
+        f.check(
+            container_image(job) == container_image(processors[0]),
+            f"{label}: activation Job must use the pinned movesWorker image",
+        )
+    f.check(
+        container_image(job)
+        == f"ghcr.io/tranz-r/tranzr-moves-worker:{SHARED_MOVES_VERSION}",
+        f"{label}: activation Job image must be movesWorker:{SHARED_MOVES_VERSION}",
+    )
+
+    f.check(
+        env.get("Worker__Role") == "VisionModeActuator",
+        f"{label}: activation Worker__Role must be VisionModeActuator",
+    )
+    expected_norm = {
+        "Vision__Normalization__IntakeMode": "AsyncQueue",
+        "Vision__Normalization__MessagingEnabled": "true",
+        "Vision__Normalization__ConsumerReady": "true",
+        "Vision__Normalization__IncludeConsumer": "false",
+        "Vision__Normalization__DeploymentIdentity": ACTIVATION_DEPLOYMENT_IDENTITY,
+        "Vision__Normalization__ActivationDrainBudgetSeconds": ACTIVATION_DRAIN_BUDGET_SECONDS,
+        "Vision__Normalization__ActivationDrainPollSeconds": ACTIVATION_DRAIN_POLL_SECONDS,
+        "Vision__Normalization__SpoolDirectory": ACTIVATION_SPOOL_DIRECTORY,
+    }
+    for key, value in expected_norm.items():
+        f.check(env.get(key) == value, f"{label}: activation {key} == {value!r}")
+
+    f.check(
+        "Vision__Normalization__TransitionFromMode" not in env,
+        f"{label}: activation Job must not set TransitionFromMode "
+        "(identity derives edge operation IDs)",
+    )
+    f.check(
+        "Vision__Normalization__TransitionOperationId" not in env,
+        f"{label}: activation Job must not set TransitionOperationId",
+    )
+
+    # Stable API transition fields remain empty / omitted on API.
+    backend = find_docs(docs, "Deployment", "tranzr-service")
+    if backend:
+        be = container_env(backend[0])
+        f.check(
+            "Vision__Normalization__TransitionFromMode" not in be,
+            f"{label}: stable API must keep TransitionFromMode empty/absent",
+        )
+        f.check(
+            "Vision__Normalization__TransitionOperationId" not in be,
+            f"{label}: stable API must keep TransitionOperationId empty/absent",
+        )
+        f.check(
+            "Vision__Normalization__DeploymentIdentity" not in be,
+            f"{label}: API must not receive actuator DeploymentIdentity",
+        )
+
+    secret_env = {
+        key: secret_ref_key(value)
+        for key, value in env.items()
+        if isinstance(value, dict) and secret_ref_key(value) is not None
+    }
+    f.check(
+        secret_env.get("ConnectionStrings__TranzrMovesDatabaseConnection") == db_secret_key,
+        f"{label}: activation DB secret must be environment pooler key "
+        f"{db_secret_key!r} (got {secret_env.get('ConnectionStrings__TranzrMovesDatabaseConnection')!r})",
+    )
+    f.check(
+        set(secret_env) == {"ConnectionStrings__TranzrMovesDatabaseConnection"},
+        f"{label}: activation secret scope must be DB-only (got {secret_env!r})",
+    )
+    for forbidden in (
+        "OPENROUTER_API_KEY",
+        "STRIPE_API_KEY",
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "RABBITMQ_PASSWORD",
+        "REDIS_PASSWORD",
+        "COMMUNICATION_SERVICES_CONNECTION_STRING",
+    ):
+        f.check(forbidden not in env, f"{label}: activation must not receive {forbidden}")
+
+    mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
+    f.check(
+        (mounts.get("tmp") or {}).get("mountPath") == "/tmp",
+        f"{label}: activation must mount /tmp under readOnlyRootFilesystem",
+    )
+    sc = container.get("securityContext") or {}
+    f.check(
+        sc.get("readOnlyRootFilesystem") is True,
+        f"{label}: activation container readOnlyRootFilesystem must be true",
+    )
+
+    # Ordering markers vs migrators (helm weight) and workloads (Argo waves).
+    db_jobs = find_docs(docs, "Job", "db-migration")
+    notif_jobs = find_docs(docs, "Job", "notifications-db-migration")
+    if db_jobs:
+        db_ann = (db_jobs[0].get("metadata") or {}).get("annotations") or {}
+        f.check(
+            db_ann.get("helm.sh/hook-weight") == "0",
+            f"{label}: db-migration helm hook-weight must remain 0",
+        )
+    if notif_jobs:
+        n_ann = (notif_jobs[0].get("metadata") or {}).get("annotations") or {}
+        f.check(
+            n_ann.get("helm.sh/hook-weight") == "1",
+            f"{label}: notifications-db-migration helm hook-weight must remain 1",
         )
 
 
@@ -876,6 +1090,24 @@ def main() -> int:
         "native policy keys, and API producer contract (default + staging + production)"
     )
 
+    for label, docs, db_secret in (
+        ("default", default_docs, "tranzr-supabase-database-connection-string"),
+        ("staging", staging_docs, "tranzr-supabase-database-connection-string"),
+        (
+            "production",
+            production_docs,
+            "tranzr-supabase-transaction-database-connection-string",
+        ),
+    ):
+        assert_vision_mode_activation_contract(
+            failures, label, docs, db_secret_key=db_secret
+        )
+    print(
+        "PASS candidate VisionModeActuator PreSync Job contract "
+        f"(identity={ACTIVATION_DEPLOYMENT_IDENTITY}, wave=2, DB-only; "
+        "role not in published 0.122.6 — pin bump blocked)"
+    )
+
     assert_prod_images(failures, production_docs)
     assert_migration_enabled(failures, production_docs)
     print(f"PASS production images + migrator == {SHARED_MOVES_VERSION}")
@@ -950,6 +1182,12 @@ def main() -> int:
             "rollback: shared moves image must remain pinned",
         )
         assert_async_normalization_contract(failures, "rollback", rollback_docs)
+        assert_vision_mode_activation_contract(
+            failures,
+            "rollback",
+            rollback_docs,
+            db_secret_key="tranzr-supabase-transaction-database-connection-string",
+        )
         assert_allowed_content_types_contract(
             failures, labels_docs=[("rollback", rollback_docs)]
         )
@@ -960,6 +1198,10 @@ def main() -> int:
         print(
             "PASS rollback keeps common photo runtime "
             f"({SHARED_MOVES_VERSION} / native AsyncQueue / five API MIME)"
+        )
+        print(
+            "PASS rollback keeps candidate VisionModeActuator PreSync Job "
+            "(messaging dark ≠ mode rewrite / no auto-downgrade)"
         )
         print(
             "PASS catalogue-learning contract unchanged under messaging/provider/retention rollback "
@@ -1186,6 +1428,120 @@ def main() -> int:
         )
         print("PASS mutation self-test rejects native policy drift")
 
+        # Normalizer off → no activation Job.
+        normalizer_off = tmp_path / "normalizer-off.yaml"
+        write_override(
+            normalizer_off,
+            {"deployments": {"workerVisionNormalizer": {"enabled": False}}},
+        )
+        try:
+            off_render = helm_template(
+                "trm-norm-off",
+                [VALUES_DEFAULT],
+                extra_values_file=normalizer_off,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        assert_no_vision_mode_activation_job(
+            failures, "normalizer-off", load_docs(off_render)
+        )
+        print("PASS normalizer disabled excludes VisionModeActuator PreSync Job")
+
+        # LegacySync intake → no activation Job (shared Async gate).
+        legacy_intake = tmp_path / "legacy-intake.yaml"
+        write_override(
+            legacy_intake,
+            {
+                "deployments": {
+                    "workerVisionNormalizer": {
+                        "normalization": {"intakeMode": "LegacySync"},
+                    }
+                }
+            },
+        )
+        try:
+            legacy_render = helm_template(
+                "trm-legacy-intake",
+                [VALUES_DEFAULT],
+                extra_values_file=legacy_intake,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        assert_no_vision_mode_activation_job(
+            failures, "legacy-intake", load_docs(legacy_render)
+        )
+        print("PASS LegacySync intake excludes VisionModeActuator PreSync Job")
+
+        # Mutation: strip Argo PreSync hook from rendered job → contract fails closed.
+        mut_act_docs = copy.deepcopy(default_docs)
+        mut_jobs = find_docs(mut_act_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        failures.check(
+            len(mut_jobs) == 1,
+            "mutation self-test: default render must include activation Job fixture",
+        )
+        if mut_jobs:
+            ann = (mut_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
+            ann.pop("argocd.argoproj.io/hook", None)
+            ann["argocd.argoproj.io/sync-wave"] = "0"
+        mut_act_failures = Failures()
+        assert_vision_mode_activation_contract(
+            mut_act_failures,
+            "mutation-activation-hook",
+            mut_act_docs,
+            db_secret_key="tranzr-supabase-database-connection-string",
+        )
+        hook_rejected = any("hook=PreSync" in msg for msg in mut_act_failures)
+        wave_rejected = any("sync-wave must be 2" in msg for msg in mut_act_failures)
+        failures.check(
+            hook_rejected and wave_rejected,
+            "mutation self-test: missing PreSync hook / wrong sync-wave must fail closed",
+        )
+        print("PASS mutation self-test rejects activation Job without PreSync/wave 2")
+
+        # Mutation: inject provider secret into activation env → DB-only scope fails.
+        if mut_jobs:
+            containers = (
+                ((mut_jobs[0].get("spec") or {}).get("template") or {}).get("spec") or {}
+            ).get("containers") or []
+            if containers:
+                # Restore hook/wave so only secret-scope assertion fires for this check.
+                ann = (mut_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
+                ann["argocd.argoproj.io/hook"] = "PreSync"
+                ann["argocd.argoproj.io/sync-wave"] = "2"
+                ann["argocd.argoproj.io/hook-delete-policy"] = (
+                    "BeforeHookCreation,HookSucceeded"
+                )
+                env_list = containers[0].setdefault("env", [])
+                env_list.append(
+                    {
+                        "name": "OPENROUTER_API_KEY",
+                        "valueFrom": {
+                            "secretKeyRef": {
+                                "name": "tranzr-application-secrets",
+                                "key": OPENROUTER_SECRET_KEY,
+                            }
+                        },
+                    }
+                )
+        secret_mut_failures = Failures()
+        assert_vision_mode_activation_contract(
+            secret_mut_failures,
+            "mutation-activation-secrets",
+            mut_act_docs,
+            db_secret_key="tranzr-supabase-database-connection-string",
+        )
+        secret_rejected = any(
+            "DB-only" in msg or "must not receive OPENROUTER_API_KEY" in msg
+            for msg in secret_mut_failures
+        )
+        failures.check(
+            secret_rejected,
+            "mutation self-test: activation provider secret must fail closed",
+        )
+        print("PASS mutation self-test rejects activation Job provider secrets")
+
     for path in (
         VALUES_DEFAULT,
         VALUES_PRODUCTION,
@@ -1195,6 +1551,7 @@ def main() -> int:
         CHART / "templates" / "deployments" / "worker-processor-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-scheduler-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-vision-normalizer-deployment.yaml",
+        CHART / "templates" / "jobs" / "vision-mode-activation.yaml",
     ):
         if not path.exists():
             failures.check(False, f"source missing: {path}")
