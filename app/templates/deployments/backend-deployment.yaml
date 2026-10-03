@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: {{ .Values.deployments.backend.name }}
   namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  {{- if .Values.deployments.workerVisionNormalizer.enabled }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  {{- end }}
   labels:
     app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-backend
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -74,6 +78,31 @@ spec:
             # production env-list replacement cannot drop it (null BaseAddress → 500).
             - name: MAPBOX_BASE_URL
               value: "https://api.mapbox.com"
+            # Vision V1 / Photo Inventory — keep outside backend.env so production
+            # list replacement cannot drop dark gates or activation toggles.
+            {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
+            {{- if .Values.deployments.workerVisionNormalizer.enabled }}
+            # Staging-only normalization producer contract. Intake mode controls
+            # enqueue; the API never hosts the normalization consumer.
+            - name: Vision__Normalization__IntakeMode
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.intakeMode | quote }}
+            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionFromMode }}
+            - name: Vision__Normalization__TransitionFromMode
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionOperationId }}
+            - name: Vision__Normalization__TransitionOperationId
+              value: {{ . | quote }}
+            {{- end }}
+            - name: Vision__Normalization__MessagingEnabled
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.messagingEnabled | quote }}
+            - name: Vision__Normalization__IncludeConsumer
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.apiIncludeConsumer | quote }}
+            - name: Vision__Normalization__ConsumerReady
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.apiConsumerReady | quote }}
+            - name: Vision__Normalization__QueueName
+              value: {{ .Values.deployments.workerVisionNormalizer.normalization.queueName | quote }}
+            {{- end }}
             {{- range .Values.deployments.backend.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}

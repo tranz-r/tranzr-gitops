@@ -205,6 +205,51 @@ az keyvault secret set --vault-name <vault> \
 Wired to backend + notifications as `WebPush__VapidPublicKey` / `WebPush__VapidPrivateKey`.
 Generate locally: `pnpm generate-vapid-keys` in `desktop-webapp/apps/driver-portal`.
 
+#### Vision V1 / Photo Inventory
+
+The shared `values.yaml` baseline activates the supported Photo Inventory V1 runtime
+in **both staging and production**: API + processor messaging on, processor
+`OpenRouter`, retention on; API stays `Fake`; `includeConsumer`, `hubEnabled`, and
+all `catalogueLearning.*` stay false. Staging is the production-like verification
+environment before merge to main / production release. Environment-specific files
+(`values-staging.yaml`, `values-production.yaml`) may override only real differences
+(URLs, poolers, Turnstile, etc.) — not a separate Vision activation path.
+
+Env is injected from `features.vision` via helpers outside `deployments.*.env`, so
+production env-list replacement cannot silently drop the gates.
+
+| Gate / mapping | Shared baseline (`values.yaml`) |
+|---|---|
+| API publish | `features.vision.analysis.apiMessagingEnabled: true` |
+| Processor consume | `features.vision.analysis.processorMessagingEnabled: true` |
+| Processor provider | `features.vision.provider.processor: OpenRouter` |
+| Retention sweeper | `features.vision.media.retentionWorkerEnabled: true` |
+| API provider | `Fake` |
+| Catalogue learning | keep `features.vision.catalogueLearning.*` false for V1 |
+| API hub / in-process consumer | keep `hubEnabled` / `includeConsumer` false (multi-replica + Redis backplane) |
+
+Rollback to dark (values-only): set `apiMessagingEnabled` / `processorMessagingEnabled` to
+`false`, `provider.processor` to `Fake`, and `media.retentionWorkerEnabled` to `false`.
+
+Shared image pin (backend/worker/migrator):
+
+```yaml
+images:
+  movesVersion: "0.121.1"
+```
+
+Required Key Vault secret (processor only — never API, scheduler, gateway, frontend, or notifications):
+
+```bash
+az keyvault secret set --vault-name <vault> \
+  --name tranzr-openrouter-api-key --value '<openrouter-key>'
+```
+
+Reuse existing `tranzr-azure-storage-connection-string` for API (already mapped), processor, and scheduler.
+Blob container: `quote-media-vision`. Queue: `vision-analysis`.
+
+Validate locally (no cluster credentials): `python3 app/scripts/verify-vision-v1.py`.
+
 ## Monitoring & Observability
 
 ### Health Checks

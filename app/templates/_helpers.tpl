@@ -182,3 +182,131 @@ Usage: {{ include "tranzrmoves.observabilityEnv" (dict "root" . "serviceName" "t
   value: deployment.environment={{ $root.Values.observability.environment }}
 {{- end }}
 {{- end }}
+
+{{/*
+Vision catalogue-learning gates: category-aware true; candidate learning /
+admin review / manufacturer lookup remain false.
+Usage: {{ include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionCatalogueLearningEnv" -}}
+{{- $v := .root.Values.features.vision.catalogueLearning -}}
+- name: Vision__CatalogueLearning__CategoryAwareInferenceEnabled
+  value: {{ $v.categoryAwareInferenceEnabled | quote }}
+- name: Vision__CatalogueLearning__CandidateLearningEnabled
+  value: {{ $v.candidateLearningEnabled | quote }}
+- name: Vision__CatalogueLearning__AdminReviewEnabled
+  value: {{ $v.adminReviewEnabled | quote }}
+- name: Vision__CatalogueLearning__ManufacturerLookupEnabled
+  value: {{ $v.manufacturerLookupEnabled | quote }}
+{{- end }}
+
+{{/*
+Vision V1 env for the API (publish / hub / media container). Outside backend.env.
+Usage: {{ include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionApiEnv" -}}
+{{- $root := .root -}}
+{{- $v := $root.Values.features.vision -}}
+- name: Vision__Analysis__MessagingEnabled
+  value: {{ $v.analysis.apiMessagingEnabled | quote }}
+- name: Vision__Analysis__IncludeConsumer
+  value: {{ $v.analysis.includeConsumer | quote }}
+- name: Vision__Analysis__HubEnabled
+  value: {{ $v.analysis.hubEnabled | quote }}
+- name: Vision__Analysis__QueueName
+  value: {{ $v.analysis.queueName | quote }}
+- name: Vision__Provider
+  value: {{ $v.provider.api | quote }}
+- name: Vision__Media__Container
+  value: {{ $v.media.container | quote }}
+- name: Vision__ConfirmationReview__ActivationEnabled
+  value: {{ $v.confirmationReview.activationEnabled | quote }}
+{{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
+{{- end }}
+
+{{/*
+Vision V1 env for the processor worker (consume / OpenRouter bounds). Outside workerProcessor.env.
+Usage: {{ include "tranzrmoves.visionProcessorEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionProcessorEnv" -}}
+{{- $root := .root -}}
+{{- $v := $root.Values.features.vision -}}
+- name: Vision__Analysis__MessagingEnabled
+  value: {{ $v.analysis.processorMessagingEnabled | quote }}
+- name: Vision__Analysis__QueueName
+  value: {{ $v.analysis.queueName | quote }}
+- name: Vision__Provider
+  value: {{ $v.provider.processor | quote }}
+- name: Vision__OpenRouter__BaseUrl
+  value: {{ $v.openRouter.baseUrl | quote }}
+- name: Vision__OpenRouter__TimeoutSeconds
+  value: {{ $v.openRouter.timeoutSeconds | quote }}
+- name: Vision__OpenRouter__MaxTokens
+  value: {{ $v.openRouter.maxTokens | quote }}
+- name: Vision__OpenRouter__MaxResponseBodyBytes
+  value: {{ $v.openRouter.maxResponseBodyBytes | quote }}
+- name: Vision__OpenRouter__MaxConcurrentRequests
+  value: {{ $v.openRouter.maxConcurrentRequests | quote }}
+- name: Vision__Media__Container
+  value: {{ $v.media.container | quote }}
+{{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
+{{- end }}
+
+{{/*
+Vision V1 env for the scheduler worker (retention sweeper). Outside workerScheduler.env.
+Usage: {{ include "tranzrmoves.visionSchedulerEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionSchedulerEnv" -}}
+{{- $root := .root -}}
+{{- $v := $root.Values.features.vision -}}
+- name: Vision__Media__RetentionWorkerEnabled
+  value: {{ $v.media.retentionWorkerEnabled | quote }}
+- name: Vision__Media__Container
+  value: {{ $v.media.container | quote }}
+- name: Vision__Media__PolicyVersion
+  value: {{ $v.media.policyVersion | quote }}
+- name: Vision__Media__RetentionPolicyVersion
+  value: {{ $v.media.retentionPolicyVersion | quote }}
+- name: Vision__Media__NormalizationPolicyVersion
+  value: {{ $v.media.normalizationPolicyVersion | quote }}
+- name: Vision__Media__IntentTtlMinutes
+  value: {{ $v.media.intentTtlMinutes | quote }}
+- name: Vision__Media__UnverifiedIntentGraceMinutes
+  value: {{ $v.media.unverifiedIntentGraceMinutes | quote }}
+- name: Vision__Media__SweeperIntervalMinutes
+  value: {{ $v.media.sweeperIntervalMinutes | quote }}
+- name: Vision__Media__SweeperBatchSize
+  value: {{ $v.media.sweeperBatchSize | quote }}
+{{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
+{{- end }}
+
+{{/*
+Vision secrets for processor: Azure Blob + OpenRouter (Key Vault refs only).
+Usage: {{ include "tranzrmoves.visionProcessorSecretEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionProcessorSecretEnv" -}}
+{{- $root := .root -}}
+- name: AZURE_STORAGE_CONNECTION_STRING
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.externalSecrets.name }}
+      key: tranzr-azure-storage-connection-string
+- name: OPENROUTER_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.externalSecrets.name }}
+      key: tranzr-openrouter-api-key
+{{- end }}
+
+{{/*
+Vision secrets for scheduler: Azure Blob only (no OpenRouter).
+Usage: {{ include "tranzrmoves.visionSchedulerSecretEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionSchedulerSecretEnv" -}}
+{{- $root := .root -}}
+- name: AZURE_STORAGE_CONNECTION_STRING
+  valueFrom:
+    secretKeyRef:
+      name: {{ $root.Values.externalSecrets.name }}
+      key: tranzr-azure-storage-connection-string
+{{- end }}

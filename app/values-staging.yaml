@@ -5,6 +5,18 @@ namespaceOverride: "tranzr-moves-staging"
 # Short release name for staging to keep resource names (e.g. CronJobs) under length limits.
 fullnameOverride: "trm-stg"
 
+# Staging-only release with the dedicated VisionNormalizer role. Production remains
+# pinned independently in values-production.yaml / the shared production gate.
+images:
+  movesVersion: "0.122.6"
+
+# Native libvips policy identity required by VipsRuntimeSelfCheck / intake (0.122.5+).
+# Shared/default and production keep norm-v1-jpeg-q85-s420.
+features:
+  vision:
+    media:
+      normalizationPolicyVersion: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
   # to the StorageClass that exists on the staging cluster (can differ from production).
@@ -54,6 +66,83 @@ observability:
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
 deployments:
+  # NOTE: this list *replaces* values.yaml deployments.backend.env (Helm merge).
+  # Keep non-URL base env here so Mapbox/Speech/notifications stay intact, and pin
+  # native Media + Normalization policy identity for AsyncQueue intake.
+  backend:
+    env:
+      - name: LOG_LEVEL
+        value: "debug"
+      - name: PORT
+        value: "8080"
+      - name: NODE_ENV
+        value: "production"
+      - name: CACHE_TTL
+        value: "300"
+      - name: FROM_EMAIL
+        value: "bookings@tranzrmoves.com"
+      - name: FROM_NAME
+        value: "Tranzzer Moves"
+      - name: MAPBOX_BASE_URL
+        value: "https://api.mapbox.com"
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzrmoves.com/checkout/cancel"
+      - name: Notifications__UseDurableMessaging
+        value: "true"
+      - name: BusinessPortal__QuoteJourneyBaseUrl
+        value: "https://tranzrmoves.com/moves"
+      - name: BusinessPortal__PortalBaseUrl
+        value: "https://portal.tranzrmoves.com"
+      - name: WebPush__Subject
+        value: "mailto:ops@tranzzer.com"
+      - name: SpeechInventory__SttBaseUrl
+        value: "http://tranzr-whisper-stt"
+      - name: SpeechInventory__MaxDurationSeconds
+        value: "15"
+      - name: SpeechInventory__HardCeilingSeconds
+        value: "20"
+      - name: SpeechInventory__SttTimeoutSeconds
+        value: "45"
+      - name: Vision__Media__NormalizationPolicyVersion
+        value: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+      - name: Vision__Normalization__NormalizationPolicyVersion
+        value: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+      # Staging native async advertisement: image defaults are JPEG/PNG/WebP only;
+      # ResolveAdvertisement advertises the configured allowlist as-is under AsyncQueue.
+      - name: Vision__Media__AllowedContentTypes__0
+        value: "image/jpeg"
+      - name: Vision__Media__AllowedContentTypes__1
+        value: "image/png"
+      - name: Vision__Media__AllowedContentTypes__2
+        value: "image/webp"
+      - name: Vision__Media__AllowedContentTypes__3
+        value: "image/heic"
+      - name: Vision__Media__AllowedContentTypes__4
+        value: "image/heif"
+  # NOTE: list replaces values.yaml deployments.workerProcessor.env.
+  workerProcessor:
+    env:
+      - name: CHECKOUT_SESSION_SUCCESS_URL
+        value: "https://tranzrmoves.com/checkout/success?session_id={CHECKOUT_SESSION_ID}"
+      - name: CHECKOUT_SESSION_CANCEL_URL
+        value: "https://tranzrmoves.com/checkout/cancel"
+      - name: Notifications__UseDurableMessaging
+        value: "true"
+      - name: Vision__Media__NormalizationPolicyVersion
+        value: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+      - name: Vision__Normalization__NormalizationPolicyVersion
+        value: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+  # Stable asynchronous normalization after the verified paused/drained transition.
+  # API wave 0 and normalizer wave 1 assert the durable target without a command.
+  # policyVersion wires matching Media + Normalization envs on the VisionNormalizer only.
+  workerVisionNormalizer:
+    enabled: true
+    normalization:
+      intakeMode: AsyncQueue
+      apiConsumerReady: true
+      policyVersion: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
   workerScheduler:
     e2eDataPurge:
       Enabled: true
