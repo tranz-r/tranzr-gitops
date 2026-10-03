@@ -62,7 +62,16 @@ features:
       # Audit identity for retention rules.
       retentionPolicyVersion: retention-policy-v1
       # Immutable canonical image-normalization contract (EXIF bake/strip, JPEG quality, chroma subsampling).
-      normalizationPolicyVersion: norm-v1-jpeg-q85-s420
+      # Native libvips identity required by VipsRuntimeSelfCheck / intake (0.122.5+).
+      normalizationPolicyVersion: norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb
+      # API ResolveAdvertisement allowlist under AsyncQueue (exact JPEG/PNG/WebP + still-HEVC aliases).
+      # Emitted only on the API via visionApiEnv; processor/scheduler keep app defaults (omit env).
+      allowedContentTypes:
+        - image/jpeg
+        - image/png
+        - image/webp
+        - image/heic
+        - image/heif
       # Lifetime of browser upload permission, in minutes.
       intentTtlMinutes: 10
       # Delay before cleanup of expired never-verified uploads, in minutes.
@@ -102,7 +111,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.121.5"
+  movesVersion: "0.122.6"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -476,24 +485,28 @@ deployments:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
-  # Dedicated queued image-normalization role. Dark in shared/default and production;
-  # staging alone enables it in values-staging.yaml for the first safe rollout.
+  # Dedicated queued image-normalization role. Shared stable AsyncQueue target for
+  # staging + production (assert-only; no Legacy→Async transition commands here).
+  # Production may still need a one-time adjacent Legacy→Paused→Async operator step
+  # before merge to main — see app/README.md Vision section.
   workerVisionNormalizer:
     name: tranzr-moves-worker-vision-normalizer
-    enabled: false
+    enabled: true
     replicaCount: 1
     normalization:
-      # Keep API verification on the existing synchronous path until staging activation.
-      intakeMode: LegacySync
-      # One-shot API-owned deployment transition. Both fields are empty in stable
-      # revisions and must be removed immediately after durable target verification.
+      # Stable asynchronous normalization after verified paused/drained transition.
+      intakeMode: AsyncQueue
+      # One-shot API-owned deployment transition. Both fields stay empty in stable
+      # shared revisions (never encode illegal Legacy→Async jumps here).
       apiTransitionFromMode: ""
       apiTransitionOperationId: ""
       messagingEnabled: true
       apiIncludeConsumer: false
-      apiConsumerReady: false
+      apiConsumerReady: true
       workerIncludeConsumer: true
       workerConsumerReady: true
+      # Must match features.vision.media.normalizationPolicyVersion (native v3).
+      policyVersion: "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
       queueName: vision-normalization-v1
       spoolDirectory: /var/spool/tranzr/vision-normalization
       spoolQuotaBytes: "2147483648"

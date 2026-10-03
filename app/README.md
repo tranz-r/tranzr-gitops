@@ -207,35 +207,75 @@ Generate locally: `pnpm generate-vapid-keys` in `desktop-webapp/apps/driver-port
 
 #### Vision V1 / Photo Inventory
 
-The shared `values.yaml` baseline activates the supported Photo Inventory V1 runtime
-in **both staging and production**: API + processor messaging on, processor
+The shared `values.yaml` baseline is the common Photo Inventory runtime for
+**default, staging, and production**: moves `0.122.6`, native normalization policy
+`norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb`, VisionNormalizer enabled with stable
+`AsyncQueue` intake (`apiConsumerReady: true`, empty transition command fields),
+API MIME allowlist JPEG/PNG/WebP/HEIC/HEIF, API + processor messaging on, processor
 `OpenRouter`, retention on; API stays `Fake`; `includeConsumer`, `hubEnabled`, and
-all `catalogueLearning.*` stay false. Staging is the production-like verification
-environment before merge to main / production release. Environment-specific files
-(`values-staging.yaml`, `values-production.yaml`) may override only real differences
-(URLs, poolers, Turnstile, etc.) — not a separate Vision activation path.
+non-category catalogue-learning flags stay false; confirmation activation stays true.
 
-Env is injected from `features.vision` via helpers outside `deployments.*.env`, so
-production env-list replacement cannot silently drop the gates.
+Environment overlays override only real differences (namespace, domains, poolers,
+Turnstile, storage classes) — not a separate photo release/policy/MIME path.
+
+Env is injected from `features.vision` (and the shared normalizer block) via helpers
+outside `deployments.*.env`, so production/staging env-list replacement cannot
+silently drop the gates.
 
 | Gate / mapping | Shared baseline (`values.yaml`) |
 |---|---|
+| Image pin | `images.movesVersion: "0.122.6"` |
+| Native policy | `features.vision.media.normalizationPolicyVersion` (+ matching worker `policyVersion`) |
+| API MIME allowlist | `features.vision.media.allowedContentTypes` (API helper only) |
+| Async normalizer | `deployments.workerVisionNormalizer.enabled: true`, `intakeMode: AsyncQueue` |
 | API publish | `features.vision.analysis.apiMessagingEnabled: true` |
 | Processor consume | `features.vision.analysis.processorMessagingEnabled: true` |
 | Processor provider | `features.vision.provider.processor: OpenRouter` |
 | Retention sweeper | `features.vision.media.retentionWorkerEnabled: true` |
 | API provider | `Fake` |
-| Catalogue learning | keep `features.vision.catalogueLearning.*` false for V1 |
+| Catalogue learning | categoryAware true; candidate/admin/manufacturer false |
 | API hub / in-process consumer | keep `hubEnabled` / `includeConsumer` false (multi-replica + Redis backplane) |
 
-Rollback to dark (values-only): set `apiMessagingEnabled` / `processorMessagingEnabled` to
-`false`, `provider.processor` to `Fake`, and `media.retentionWorkerEnabled` to `false`.
+Rollback to dark (values-only messaging path): set `apiMessagingEnabled` /
+`processorMessagingEnabled` to `false`, `provider.processor` to `Fake`,
+`media.retentionWorkerEnabled` to `false`, and `confirmationReview.activationEnabled`
+to `false`. Shared image / native AsyncQueue / API MIME remain the common contract
+unless separately overridden.
+
+**Production → main merge BLOCKED (operator first-upgrade, not this PR):**
+Parent READONLY production schema confirms
+`tranzrmoves."VisionNormalizationRuntimeStates"` is **ABSENT**, and the adjacent
+durability tables (`VisionNormalizationJobs`, `VisionSourceNormalizations`) are
+also **ABSENT**. Production is still on image `0.121.5` without a native
+VisionNormalizer. The backend mode guard reads/writes those tables
+(`VisionNormalizationModeGuard` / `VisionNormalizationModeActivationHostedService`):
+with empty transition fields the host **asserts** configured `IntakeMode` against
+the durable row; adjacent activation is only
+`LegacySync`→`IntakePaused`→`AsyncQueue` (never a direct Legacy→Async jump).
+Missing tables make any pre-merge “complete Legacy→Paused→Async” step **impossible**
+until an intermediate image/migrator rollout creates them (foundation migration seeds
+`LegacySync`).
+
+This PR is **desired stable shared config only** (`AsyncQueue`, empty
+`TransitionFromMode` / transition operation fields). It is **not** a deployment
+promise and must not be treated as a legal production jump.
+
+**Operator prerequisite overview (outside this repo; no invented CLI here):**
+1. First-upgrade production moves image + run migrators so the normalization
+   durability schema exists (runtime-state singleton, jobs, source-normalizations,
+   transition-operation identity) while authority remains / becomes `LegacySync`.
+2. Complete legal adjacent mode activation with one-time transition identity
+   (not permanent shared values): `LegacySync`→`IntakePaused`, drain/readiness as
+   required by the guard, then `IntakePaused`→`AsyncQueue` with messaging +
+   consumer-ready; read back durable `IntakeMode=AsyncQueue`.
+3. Only after (1)+(2) is develop→main / production apply of this stable Async
+   config unblocked. Until then, **keep production main merge blocked**.
 
 Shared image pin (backend/worker/migrator):
 
 ```yaml
 images:
-  movesVersion: "0.121.1"
+  movesVersion: "0.122.6"
 ```
 
 Required Key Vault secret (processor only — never API, scheduler, gateway, frontend, or notifications):
@@ -246,7 +286,7 @@ az keyvault secret set --vault-name <vault> \
 ```
 
 Reuse existing `tranzr-azure-storage-connection-string` for API (already mapped), processor, and scheduler.
-Blob container: `quote-media-vision`. Queue: `vision-analysis`.
+Blob container: `quote-media-vision`. Queue: `vision-analysis`. Normalization queue: `vision-normalization-v1`.
 
 Validate locally (no cluster credentials): `python3 app/scripts/verify-vision-v1.py`.
 
