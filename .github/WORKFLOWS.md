@@ -25,8 +25,10 @@ This repository uses automated workflows to handle semantic versioning and deplo
   - Creates/updates ArgoCD ApplicationSet
 
 ### 3. **Commit Lint (`commitlint.yaml`)**
-- **Trigger**: Push/PR to main branch
-- **Purpose**: Validates conventional commit format
+- **Trigger**: Push to `main`, all `pull_request` events (not `pull_request_target`)
+- **Purpose**: Validates conventional commit format with pinned PyPI `commitlint==1.3.0` (matches action release `v1.3.0`)
+- **Range**: Trusted event SHAs via env — PR `base..head`, push `before..after` (zero SHAs fail closed)
+- **Historical exception**: Exact SHA `7c91ac878c344c53bb385c57bc8c8e75ac5eef06` (`Develop (#44)`) may skip lint only when it is a confirmed ancestor of `origin/main`. It was already accepted on main; ancestry-repair PRs reintroduce that SHA into the PR range. Any other commit, including a new one with the same title, is still validated. This is not a filter of all main commits.
 - **Ensures**: Proper commit messages for semantic release
 
 ## Workflow Sequence
