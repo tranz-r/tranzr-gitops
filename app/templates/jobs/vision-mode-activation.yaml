@@ -1,8 +1,12 @@
 {{- /*
-  Candidate PreSync VisionModeActuator Job.
+  Candidate VisionModeActuator Job (Helm hooks only).
   Renders only for shared AsyncQueue + enabled VisionNormalizer.
   Backend WorkerRole.VisionModeActuator is NOT in published 0.122.6 — keep
   images.movesVersion unchanged until a verified later tag ships the role.
+  Use the same helm.sh/hook* shape as other prereqs so Argo maps them to
+  PreSync / sync-wave / delete-policy. Do NOT set argocd.argoproj.io/hook
+  anywhere in the render — one explicit Argo hook causes Argo to ignore ALL
+  Helm hooks (docs/user-guide/helm.md).
 */ -}}
 {{- $job := .Values.jobs.visionModeActivation -}}
 {{- $worker := .Values.deployments.workerVisionNormalizer -}}
@@ -17,11 +21,8 @@ metadata:
     {{- include "tranzrmoves.labels" . | nindent 4 }}
     app.kubernetes.io/component: vision-mode-activation
   annotations:
-    # Argo ordering (authoritative): after migrators (helm weights 0/1), before API wave 0.
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/sync-wave: "2"
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    # Helm hook mirror so local helm hook semantics stay aligned with migrators.
+    # Helm-only: Argo maps pre-install/pre-upgrade → PreSync, weight → sync-wave.
+    # Weight 2 runs after migrators (0/1), before Sync API wave 0 / normalizer 1.
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "2"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded

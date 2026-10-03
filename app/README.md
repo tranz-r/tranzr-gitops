@@ -244,9 +244,23 @@ unless separately overridden.
 
 **Candidate PreSync activation Job (this chart) — not production-actuated yet:**
 When `workerVisionNormalizer.enabled` and `intakeMode: AsyncQueue`, the chart
-renders a fixed-name Argo `PreSync` Job (`sync-wave: "2"`) after DB /
-notifications migrators and before API wave `0` / normalizer wave `1`. It runs
-`Worker__Role=VisionModeActuator` on the pinned `movesWorker` image with
+renders a fixed-name Job using the **same Helm hook annotations** as other
+prereqs (`helm.sh/hook: pre-install,pre-upgrade`, `helm.sh/hook-weight: "2"`,
+`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). It does
+**not** set `argocd.argoproj.io/hook` — Argo CD maps Helm hooks to PreSync /
+sync-wave / delete-policy only when **no** resource in the render carries an
+explicit Argo hook ([Argo CD Helm hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-hooks)).
+Mixing one Argo hook with Helm-only prereqs causes Argo to **ignore all** Helm
+hooks (including SA / ExternalSecrets / migrators / chatwoot).
+
+**Effective Argo ordering (Helm→Argo mapping, no explicit Argo hooks):**
+PreSync waves: SA `-10` → imagepull `-9` → app secrets `-8` → DB migration `0`
+→ notifications migration `1` → activation actuator `2`; then Sync: API
+`argocd.argoproj.io/sync-wave: "0"` → VisionNormalizer `"1"` (ordinary sync-wave
+on Sync resources is fine; it is not a hook). Chatwoot migrate stays
+Helm `post-install,post-upgrade` → PostSync. Test hooks are unsupported/skipped.
+
+It runs `Worker__Role=VisionModeActuator` on the pinned `movesWorker` image with
 DB-only secrets (environment session/transaction pooler), deterministic
 `DeploymentIdentity=moves-<movesVersion>-<contractRevision>`, and empty stable
 API `TransitionFromMode` / `TransitionOperationId` fields. Already-durable

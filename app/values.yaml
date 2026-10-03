@@ -907,7 +907,8 @@ jobs:
         cpu: 500m
         memory: 512Mi
 
-  # Candidate PreSync VisionModeActuator Job (worker image + Worker__Role).
+  # Candidate VisionModeActuator Job (Helm pre-install/pre-upgrade weight 2).
+  # Argo maps to PreSync when no explicit argocd.argoproj.io/hook is in the render.
   # Auto-renders only when workerVisionNormalizer.enabled && intakeMode=AsyncQueue.
   # Backend role is NOT in published images.movesVersion 0.122.6 — do not actuate
   # production until a verified later tag publishes VisionModeActuator and the pin moves.

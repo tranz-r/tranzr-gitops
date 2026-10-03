@@ -6,8 +6,9 @@ pin / native AsyncQueue / five API MIME), and a temporary messaging
 rollback/dark override (no secrets / no cluster). Exit 0 only when all
 assertions pass.
 
-Also asserts the candidate VisionModeActuator PreSync Job contract. That role
-is not in published 0.122.6 — template is candidate-only until a later tag.
+Also asserts the candidate VisionModeActuator Job contract (Helm hooks that
+Argo maps to PreSync when no explicit Argo hook appears in the render). That
+role is not in published 0.122.6 — template is candidate-only until a later tag.
 """
 
 from __future__ import annotations
@@ -64,6 +65,42 @@ ACTIVATION_JOB_NAME_SUBSTR = "vision-mode-activation"
 ACTIVATION_DRAIN_BUDGET_SECONDS = "90"
 ACTIVATION_DRAIN_POLL_SECONDS = "2"
 ACTIVATION_SPOOL_DIRECTORY = "/tmp/tranzr-vision-mode-actuator"
+
+ARGO_HOOK_ANNOTATION = "argocd.argoproj.io/hook"
+ARGO_HOOK_DELETE_POLICY = "argocd.argoproj.io/hook-delete-policy"
+ARGO_SYNC_WAVE = "argocd.argoproj.io/sync-wave"
+HELM_HOOK_ANNOTATION = "helm.sh/hook"
+HELM_HOOK_WEIGHT = "helm.sh/hook-weight"
+HELM_HOOK_DELETE_POLICY = "helm.sh/hook-delete-policy"
+
+# Official Argo CD Helm→Argo mapping (docs/user-guide/helm.md#helm-hooks).
+# If ANY resource has argocd.argoproj.io/hook, Argo ignores ALL Helm hooks.
+HELM_HOOK_TO_ARGO_PHASE = {
+    "pre-install": "PreSync",
+    "pre-upgrade": "PreSync",
+    "post-install": "PostSync",
+    "post-upgrade": "PostSync",
+    "pre-delete": "PreDelete",
+    "post-delete": "PostDelete",
+}
+HELM_DELETE_TO_ARGO = {
+    "before-hook-creation": "BeforeHookCreation",
+    "hook-succeeded": "HookSucceeded",
+    "hook-failed": "HookFailed",
+}
+# Unsupported by Argo (skipped); still must not mix with explicit Argo hooks.
+HELM_HOOKS_UNSUPPORTED = frozenset({"test", "test-success", "test-failure", "crd-install"})
+
+# Expected PreSync helm weights after secrets → migrators → actuator.
+# Keys are logical roles resolved via kind/name/component (not raw substrings).
+EXPECTED_PRESYNC_WEIGHTS = {
+    "serviceaccount": "-10",
+    "imagepull": "-9",
+    "application-secrets": "-8",
+    "db-migration": "0",
+    "notifications-db-migration": "1",
+    "activation": "2",
+}
 
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
@@ -238,6 +275,187 @@ def normalization_env(env: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in env.items() if key.startswith(NORMALIZATION_ENV_PREFIX)}
 
 
+def _split_csv_annotation(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in str(value).split(",") if part.strip()]
+
+
+def doc_annotations(doc: dict[str, Any]) -> dict[str, Any]:
+    return (doc.get("metadata") or {}).get("annotations") or {}
+
+
+def resources_with_explicit_argo_hooks(
+    docs: list[dict[str, Any]],
+) -> list[tuple[str, str, str]]:
+    """Return (kind, name, hook) for every explicit Argo hook annotation."""
+    found: list[tuple[str, str, str]] = []
+    for doc in docs:
+        ann = doc_annotations(doc)
+        hook = ann.get(ARGO_HOOK_ANNOTATION)
+        if not hook:
+            continue
+        meta = doc.get("metadata") or {}
+        found.append((str(doc.get("kind") or ""), str(meta.get("name") or ""), str(hook)))
+    return found
+
+
+def effective_argo_hook_mapping(
+    annotations: dict[str, Any],
+) -> tuple[str | None, str | None, set[str]]:
+    """Resolve Helm hooks → Argo phase / wave / delete-policy when mapper is active.
+
+    Returns (phase, sync_wave, delete_policies). phase is None when hooks are
+    unsupported/empty; mixed supported phases are joined with '+'.
+    """
+    helm_hooks = _split_csv_annotation(annotations.get(HELM_HOOK_ANNOTATION))
+    phases: list[str] = []
+    for hook in helm_hooks:
+        if hook in HELM_HOOKS_UNSUPPORTED:
+            continue
+        mapped = HELM_HOOK_TO_ARGO_PHASE.get(hook)
+        if mapped and mapped not in phases:
+            phases.append(mapped)
+    phase = "+".join(phases) if phases else None
+    weight = annotations.get(HELM_HOOK_WEIGHT)
+    wave = str(weight) if weight is not None and str(weight) != "" else None
+    delete_policies = {
+        HELM_DELETE_TO_ARGO[part]
+        for part in _split_csv_annotation(annotations.get(HELM_HOOK_DELETE_POLICY))
+        if part in HELM_DELETE_TO_ARGO
+    }
+    return phase, wave, delete_policies
+
+
+def assert_helm_only_hook_mapping_active(
+    f: Failures, label: str, docs: list[dict[str, Any]]
+) -> bool:
+    """Fail closed if any explicit Argo hook would disable Helm hook mapping."""
+    explicit = resources_with_explicit_argo_hooks(docs)
+    f.check(
+        not explicit,
+        f"{label}: BLOCKER — explicit {ARGO_HOOK_ANNOTATION} disables ALL Helm "
+        f"hooks (Argo docs/user-guide/helm.md); migrate every prereq+dependency "
+        f"to Argo hooks instead of relying on the mapper. Found: {explicit!r}",
+    )
+    return not explicit
+
+
+def _presync_role(doc: dict[str, Any]) -> str | None:
+    """Map a PreSync resource to a logical ordering role, or None if unrelated."""
+    kind = str(doc.get("kind") or "")
+    name = str((doc.get("metadata") or {}).get("name") or "")
+    component = str(
+        ((doc.get("metadata") or {}).get("labels") or {}).get(
+            "app.kubernetes.io/component"
+        )
+        or ""
+    )
+    if kind == "ServiceAccount":
+        return "serviceaccount"
+    if kind == "ExternalSecret" and (
+        "github-registry" in name or component == "github-registry-secret"
+    ):
+        return "imagepull"
+    if kind == "ExternalSecret" and (
+        name.endswith("tranzrmoves-secrets")
+        or "application" in component
+        or component == "tranzrmoves-secrets"
+    ):
+        return "application-secrets"
+    if kind == "Job" and ACTIVATION_JOB_NAME_SUBSTR in name:
+        return "activation"
+    if kind == "Job" and "notifications-db-migration" in name:
+        return "notifications-db-migration"
+    if kind == "Job" and name.endswith("-db-migration"):
+        return "db-migration"
+    return None
+
+
+def assert_presync_weight_ordering(
+    f: Failures, label: str, docs: list[dict[str, Any]]
+) -> None:
+    """Assert Helm PreSync weights: secrets -10..-8 → migrators 0/1 → actuator 2."""
+    role_to_weight: dict[str, str] = {}
+    for doc in docs:
+        ann = doc_annotations(doc)
+        phase, wave, _ = effective_argo_hook_mapping(ann)
+        if phase != "PreSync" or wave is None:
+            continue
+        role = _presync_role(doc)
+        if role is None:
+            continue
+        # Prefer the first match; duplicates with conflicting weights fail below.
+        if role in role_to_weight and role_to_weight[role] != wave:
+            f.check(
+                False,
+                f"{label}: conflicting PreSync weights for {role!r}: "
+                f"{role_to_weight[role]!r} vs {wave!r}",
+            )
+        role_to_weight[role] = wave
+
+    for key, expected in EXPECTED_PRESYNC_WEIGHTS.items():
+        got = role_to_weight.get(key)
+        f.check(
+            got == expected,
+            f"{label}: PreSync helm weight for {key!r} must be {expected!r} "
+            f"(effective Argo sync-wave); got {got!r}",
+        )
+
+    def _as_int(key: str) -> int | None:
+        raw = role_to_weight.get(key)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    sa, img, app = (
+        _as_int("serviceaccount"),
+        _as_int("imagepull"),
+        _as_int("application-secrets"),
+    )
+    db, notif, act = (
+        _as_int("db-migration"),
+        _as_int("notifications-db-migration"),
+        _as_int("activation"),
+    )
+    if None not in (sa, img, app, db, notif, act):
+        f.check(
+            sa < img < app < db < notif < act,  # type: ignore[operator]
+            f"{label}: PreSync wave order must be "
+            f"SA({sa}) < imagepull({img}) < secrets({app}) < "
+            f"db({db}) < notifications({notif}) < actuator({act})",
+        )
+
+    backends = find_docs(docs, "Deployment", "tranzr-service")
+    normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
+    if backends:
+        api_ann = doc_annotations(backends[0])
+        api_wave = api_ann.get(ARGO_SYNC_WAVE)
+        f.check(
+            api_wave == "0",
+            f"{label}: API ordinary Sync {ARGO_SYNC_WAVE} must remain 0 "
+            f"(not a hook; got {api_wave!r})",
+        )
+        f.check(
+            ARGO_HOOK_ANNOTATION not in api_ann,
+            f"{label}: API must not carry {ARGO_HOOK_ANNOTATION}",
+        )
+        f.check(
+            HELM_HOOK_ANNOTATION not in api_ann,
+            f"{label}: API must not be a Helm hook (Sync wave 0)",
+        )
+    if normalizers:
+        n_wave = doc_annotations(normalizers[0]).get(ARGO_SYNC_WAVE)
+        f.check(
+            n_wave == "1",
+            f"{label}: VisionNormalizer ordinary Sync {ARGO_SYNC_WAVE} must "
+            f"remain 1 (got {n_wave!r})",
+        )
+
+
 def assert_no_normalization_contract(
     f: Failures, label: str, docs: list[dict[str, Any]]
 ) -> None:
@@ -280,11 +498,17 @@ def assert_no_vision_mode_activation_job(
 def assert_vision_mode_activation_contract(
     f: Failures, label: str, docs: list[dict[str, Any]], *, db_secret_key: str
 ) -> None:
-    """Shared AsyncQueue + normalizer-on → candidate PreSync activation Job."""
+    """Shared AsyncQueue + normalizer-on → candidate Helm-hook activation Job.
+
+    Effective Argo phase is PreSync via Helm→Argo mapping when no explicit
+    Argo hook exists anywhere in the render (docs/user-guide/helm.md).
+    """
+    mapping_ok = assert_helm_only_hook_mapping_active(f, label, docs)
+
     jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
     f.check(
         len(jobs) == 1,
-        f"{label}: expected exactly one VisionModeActuator PreSync Job "
+        f"{label}: expected exactly one VisionModeActuator activation Job "
         f"({ACTIVATION_JOB_NAME_SUBSTR})",
     )
     if not jobs:
@@ -298,21 +522,60 @@ def assert_vision_mode_activation_contract(
     container = first_container(job)
     env = container_env(job)
 
+    # Mixed shape: explicit Argo hook on the Job (or anywhere) disables Helm mapping.
     f.check(
-        annotations.get("argocd.argoproj.io/hook") == "PreSync",
-        f"{label}: activation Job must use argocd.argoproj.io/hook=PreSync",
+        ARGO_HOOK_ANNOTATION not in annotations,
+        f"{label}: activation Job must not set {ARGO_HOOK_ANNOTATION} "
+        f"(mixed Argo+Helm hooks disable ALL Helm prereq mapping)",
     )
     f.check(
-        annotations.get("argocd.argoproj.io/sync-wave") == "2",
-        f"{label}: activation Job sync-wave must be 2 "
-        "(after migrators weight 0/1, before API wave 0)",
+        ARGO_HOOK_DELETE_POLICY not in annotations,
+        f"{label}: activation Job must not set {ARGO_HOOK_DELETE_POLICY} "
+        f"(use {HELM_HOOK_DELETE_POLICY} only)",
     )
-    delete_policy = annotations.get("argocd.argoproj.io/hook-delete-policy") or ""
+    # Ordinary sync-wave on Sync workloads is OK; hook Jobs must use helm weight.
     f.check(
-        "BeforeHookCreation" in delete_policy and "HookSucceeded" in delete_policy,
-        f"{label}: activation Job hook-delete-policy must include "
-        f"BeforeHookCreation+HookSucceeded (got {delete_policy!r})",
+        ARGO_SYNC_WAVE not in annotations,
+        f"{label}: activation Job must not set {ARGO_SYNC_WAVE}; "
+        f"effective wave comes from {HELM_HOOK_WEIGHT}",
     )
+
+    helm_hooks = set(_split_csv_annotation(annotations.get(HELM_HOOK_ANNOTATION)))
+    f.check(
+        helm_hooks == {"pre-install", "pre-upgrade"},
+        f"{label}: activation Job must use {HELM_HOOK_ANNOTATION}="
+        f"pre-install,pre-upgrade (same as migrator prereqs; got {helm_hooks!r})",
+    )
+    f.check(
+        annotations.get(HELM_HOOK_WEIGHT) == "2",
+        f"{label}: activation Job {HELM_HOOK_WEIGHT} must be 2 "
+        f"(after migrators 0/1, before API Sync 0; effective Argo sync-wave)",
+    )
+    helm_delete = set(_split_csv_annotation(annotations.get(HELM_HOOK_DELETE_POLICY)))
+    f.check(
+        helm_delete == {"before-hook-creation", "hook-succeeded"},
+        f"{label}: activation Job {HELM_HOOK_DELETE_POLICY} must be "
+        f"before-hook-creation,hook-succeeded (got {sorted(helm_delete)!r})",
+    )
+
+    if mapping_ok:
+        phase, wave, delete_policies = effective_argo_hook_mapping(annotations)
+        f.check(
+            phase == "PreSync",
+            f"{label}: effective Argo phase for activation Job must be PreSync "
+            f"(Helm pre-install/pre-upgrade mapping; got {phase!r})",
+        )
+        f.check(
+            wave == "2",
+            f"{label}: effective Argo sync-wave for activation Job must be 2 "
+            f"(got {wave!r})",
+        )
+        f.check(
+            delete_policies == {"BeforeHookCreation", "HookSucceeded"},
+            f"{label}: effective Argo hook-delete-policy must map to "
+            f"BeforeHookCreation+HookSucceeded (got {sorted(delete_policies)!r})",
+        )
+        assert_presync_weight_ordering(f, label, docs)
 
     f.check(spec.get("backoffLimit") == 1, f"{label}: activation backoffLimit must be 1")
     f.check(
@@ -1103,9 +1366,9 @@ def main() -> int:
             failures, label, docs, db_secret_key=db_secret
         )
     print(
-        "PASS candidate VisionModeActuator PreSync Job contract "
-        f"(identity={ACTIVATION_DEPLOYMENT_IDENTITY}, wave=2, DB-only; "
-        "role not in published 0.122.6 — pin bump blocked)"
+        "PASS candidate VisionModeActuator Helm→PreSync Job contract "
+        f"(identity={ACTIVATION_DEPLOYMENT_IDENTITY}, helm-weight/effective-wave=2, "
+        "DB-only; no explicit Argo hooks; role not in published 0.122.6 — pin bump blocked)"
     )
 
     assert_prod_images(failures, production_docs)
@@ -1474,45 +1737,75 @@ def main() -> int:
         )
         print("PASS LegacySync intake excludes VisionModeActuator PreSync Job")
 
-        # Mutation: strip Argo PreSync hook from rendered job → contract fails closed.
-        mut_act_docs = copy.deepcopy(default_docs)
-        mut_jobs = find_docs(mut_act_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        # RED mutation: mixed Argo+Helm hooks → mapping disabled / contract fails.
+        mixed_docs = copy.deepcopy(default_docs)
+        mixed_jobs = find_docs(mixed_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
         failures.check(
-            len(mut_jobs) == 1,
+            len(mixed_jobs) == 1,
             "mutation self-test: default render must include activation Job fixture",
         )
-        if mut_jobs:
-            ann = (mut_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
-            ann.pop("argocd.argoproj.io/hook", None)
-            ann["argocd.argoproj.io/sync-wave"] = "0"
-        mut_act_failures = Failures()
+        if mixed_jobs:
+            ann = (mixed_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
+            ann[ARGO_HOOK_ANNOTATION] = "PreSync"
+            ann[ARGO_SYNC_WAVE] = "2"
+            ann[ARGO_HOOK_DELETE_POLICY] = "BeforeHookCreation,HookSucceeded"
+        mixed_failures = Failures()
         assert_vision_mode_activation_contract(
-            mut_act_failures,
-            "mutation-activation-hook",
-            mut_act_docs,
+            mixed_failures,
+            "mutation-mixed-hooks",
+            mixed_docs,
             db_secret_key="tranzr-supabase-database-connection-string",
         )
-        hook_rejected = any("hook=PreSync" in msg for msg in mut_act_failures)
-        wave_rejected = any("sync-wave must be 2" in msg for msg in mut_act_failures)
-        failures.check(
-            hook_rejected and wave_rejected,
-            "mutation self-test: missing PreSync hook / wrong sync-wave must fail closed",
+        mixed_rejected = any(
+            "mixed Argo+Helm" in msg
+            or "BLOCKER" in msg
+            or ARGO_HOOK_ANNOTATION in msg
+            for msg in mixed_failures
         )
-        print("PASS mutation self-test rejects activation Job without PreSync/wave 2")
+        failures.check(
+            mixed_rejected,
+            "mutation self-test: mixed Argo+Helm hooks must fail closed",
+        )
+        print("PASS mutation self-test rejects mixed Argo+Helm activation hooks")
+
+        # RED mutation: effective PreSync wave drift (helm weight ≠ 2) → fail closed.
+        drift_docs = copy.deepcopy(default_docs)
+        drift_jobs = find_docs(drift_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        if drift_jobs:
+            ann = (drift_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
+            ann[HELM_HOOK_WEIGHT] = "0"
+            ann.pop(ARGO_HOOK_ANNOTATION, None)
+            ann.pop(ARGO_SYNC_WAVE, None)
+            ann.pop(ARGO_HOOK_DELETE_POLICY, None)
+        drift_failures = Failures()
+        assert_vision_mode_activation_contract(
+            drift_failures,
+            "mutation-activation-wave-drift",
+            drift_docs,
+            db_secret_key="tranzr-supabase-database-connection-string",
+        )
+        wave_rejected = any(
+            HELM_HOOK_WEIGHT in msg
+            or "effective Argo sync-wave" in msg
+            or "PreSync helm weight" in msg
+            or "wave order" in msg
+            for msg in drift_failures
+        )
+        failures.check(
+            wave_rejected,
+            "mutation self-test: activation helm weight drift must fail closed",
+        )
+        print("PASS mutation self-test rejects activation effective wave drift")
 
         # Mutation: inject provider secret into activation env → DB-only scope fails.
-        if mut_jobs:
+        secret_docs = copy.deepcopy(default_docs)
+        secret_jobs = find_docs(secret_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        if secret_jobs:
             containers = (
-                ((mut_jobs[0].get("spec") or {}).get("template") or {}).get("spec") or {}
+                ((secret_jobs[0].get("spec") or {}).get("template") or {}).get("spec")
+                or {}
             ).get("containers") or []
             if containers:
-                # Restore hook/wave so only secret-scope assertion fires for this check.
-                ann = (mut_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
-                ann["argocd.argoproj.io/hook"] = "PreSync"
-                ann["argocd.argoproj.io/sync-wave"] = "2"
-                ann["argocd.argoproj.io/hook-delete-policy"] = (
-                    "BeforeHookCreation,HookSucceeded"
-                )
                 env_list = containers[0].setdefault("env", [])
                 env_list.append(
                     {
@@ -1529,7 +1822,7 @@ def main() -> int:
         assert_vision_mode_activation_contract(
             secret_mut_failures,
             "mutation-activation-secrets",
-            mut_act_docs,
+            secret_docs,
             db_secret_key="tranzr-supabase-database-connection-string",
         )
         secret_rejected = any(
