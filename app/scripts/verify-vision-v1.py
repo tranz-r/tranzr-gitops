@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Repository-local Vision V1 / Photo Inventory GitOps verifier.
 
-Renders Helm manifests for default/shared, staging, production (all active), and a
-temporary rollback/dark override (no secrets / no cluster). Exit 0 only when all
+Renders Helm manifests for default/shared, staging, production (common photo
+0.122.6 / native AsyncQueue / five API MIME), and a temporary messaging
+rollback/dark override (no secrets / no cluster). Exit 0 only when all
 assertions pass.
 """
 
@@ -24,8 +25,7 @@ VALUES_DEFAULT = CHART / "values.yaml"
 VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
-PROD_VERSION = "0.121.5"
-STAGING_VERSION = "0.122.6"
+SHARED_MOVES_VERSION = "0.122.6"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -36,28 +36,18 @@ NORMALIZATION_ENV_PREFIX = "Vision__Normalization__"
 MEDIA_NORMALIZATION_POLICY_KEY = "Vision__Media__NormalizationPolicyVersion"
 NORMALIZATION_POLICY_KEY = "Vision__Normalization__NormalizationPolicyVersion"
 ALLOWED_CONTENT_TYPES_ENV_PREFIX = "Vision__Media__AllowedContentTypes__"
-# Staging API native async advertisement allowlist (JPEG/PNG/WebP + still-HEVC aliases).
-STAGING_API_ALLOWED_CONTENT_TYPES = (
+# Shared API native async advertisement allowlist (JPEG/PNG/WebP + still-HEVC aliases).
+API_ALLOWED_CONTENT_TYPES = (
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/heic",
     "image/heif",
 )
-# Shared/default + production keep the pre-native JPEG contract.
+# Drift-only fixture for fail-closed mutation self-test (not an expected runtime pin).
 LEGACY_NORMALIZATION_POLICY_VERSION = "norm-v1-jpeg-q85-s420"
-# Staging 0.122.5+ matches VipsVisionNormalizerOptions.ProductionNormalizationPolicyVersion.
+# 0.122.5+ matches VipsVisionNormalizerOptions.ProductionNormalizationPolicyVersion.
 NATIVE_NORMALIZATION_POLICY_VERSION = "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
-POLICY_PARITY_EXCLUDE_KEYS = frozenset(
-    {
-        MEDIA_NORMALIZATION_POLICY_KEY,
-        NORMALIZATION_POLICY_KEY,
-        *(
-            f"{ALLOWED_CONTENT_TYPES_ENV_PREFIX}{i}"
-            for i in range(len(STAGING_API_ALLOWED_CONTENT_TYPES))
-        ),
-    }
-)
 
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
@@ -232,11 +222,14 @@ def assert_no_normalization_contract(
         )
 
 
-def assert_staging_normalization_contract(
-    f: Failures, docs: list[dict[str, Any]]
+def assert_async_normalization_contract(
+    f: Failures, label: str, docs: list[dict[str, Any]]
 ) -> None:
     normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
-    f.check(len(normalizers) == 1, "staging: expected exactly one VisionNormalizer Deployment")
+    f.check(
+        len(normalizers) == 1,
+        f"{label}: expected exactly one VisionNormalizer Deployment",
+    )
     if not normalizers:
         return
 
@@ -246,20 +239,29 @@ def assert_staging_normalization_contract(
     container = first_container(normalizer)
     env = container_env(normalizer)
 
-    f.check(spec.get("replicas") == 1, "staging: VisionNormalizer replicas must equal 1")
+    f.check(spec.get("replicas") == 1, f"{label}: VisionNormalizer replicas must equal 1")
     f.check(
         ((normalizer.get("metadata") or {}).get("annotations") or {}).get(
             "argocd.argoproj.io/sync-wave"
-        ) == "1",
-        "staging: VisionNormalizer must start in Argo sync wave 1",
+        )
+        == "1",
+        f"{label}: VisionNormalizer must start in Argo sync wave 1",
     )
     processors = find_docs(docs, "Deployment", "worker-processor")
     if processors:
         f.check(
             container_image(normalizer) == container_image(processors[0]),
-            "staging: VisionNormalizer must use the movesWorker image",
+            f"{label}: VisionNormalizer must use the movesWorker image",
         )
-    f.check(env.get("Worker__Role") == "VisionNormalizer", "staging: VisionNormalizer worker role")
+        f.check(
+            container_image(normalizer)
+            == f"ghcr.io/tranz-r/tranzr-moves-worker:{SHARED_MOVES_VERSION}",
+            f"{label}: VisionNormalizer image must be {SHARED_MOVES_VERSION}",
+        )
+    f.check(
+        env.get("Worker__Role") == "VisionNormalizer",
+        f"{label}: VisionNormalizer worker role",
+    )
 
     expected = {
         "Vision__Normalization__IntakeMode": "AsyncQueue",
@@ -272,24 +274,24 @@ def assert_staging_normalization_contract(
         "Vision__Normalization__SpoolFreeSpaceHeadroomBytes": NORMALIZATION_SPOOL_HEADROOM_BYTES,
     }
     for key, value in expected.items():
-        f.check(env.get(key) == value, f"staging: normalizer {key} == {value!r}")
+        f.check(env.get(key) == value, f"{label}: normalizer {key} == {value!r}")
     f.check(
         env.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-        f"staging: normalizer {MEDIA_NORMALIZATION_POLICY_KEY} == "
+        f"{label}: normalizer {MEDIA_NORMALIZATION_POLICY_KEY} == "
         f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
     )
     f.check(
         env.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-        f"staging: normalizer {NORMALIZATION_POLICY_KEY} == "
+        f"{label}: normalizer {NORMALIZATION_POLICY_KEY} == "
         f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
     )
     f.check(
         "Vision__Normalization__TransitionFromMode" not in env,
-        "staging: normalizer must not own the mode-transition source",
+        f"{label}: normalizer must not own the mode-transition source",
     )
     f.check(
         "Vision__Normalization__TransitionOperationId" not in env,
-        "staging: normalizer must not own the mode-transition operation ID",
+        f"{label}: normalizer must not own the mode-transition operation ID",
     )
 
     secret_env = {
@@ -297,30 +299,50 @@ def assert_staging_normalization_contract(
         for key, value in env.items()
         if isinstance(value, dict) and secret_ref_key(value) is not None
     }
-    expected_secret_env = {
-        "ConnectionStrings__TranzrMovesDatabaseConnection": "tranzr-supabase-database-connection-string",
-        "RABBITMQ_PASSWORD": "platform-rabbitmq-password",
-        "AZURE_STORAGE_CONNECTION_STRING": AZURE_STORAGE_SECRET_KEY,
+    db_secret = secret_env.get("ConnectionStrings__TranzrMovesDatabaseConnection")
+    allowed_db_secrets = {
+        "tranzr-supabase-database-connection-string",
+        "tranzr-supabase-transaction-database-connection-string",
     }
     f.check(
-        secret_env == expected_secret_env,
-        f"staging: normalizer secret scope mismatch (got {secret_env!r})",
+        db_secret in allowed_db_secrets,
+        f"{label}: normalizer DB secret must be session or transaction pooler key "
+        f"(got {db_secret!r})",
+    )
+    f.check(
+        secret_env.get("RABBITMQ_PASSWORD") == "platform-rabbitmq-password",
+        f"{label}: normalizer RabbitMQ password secret key",
+    )
+    f.check(
+        secret_env.get("AZURE_STORAGE_CONNECTION_STRING") == AZURE_STORAGE_SECRET_KEY,
+        f"{label}: normalizer Azure storage secret key",
+    )
+    f.check(
+        set(secret_env) == {
+            "ConnectionStrings__TranzrMovesDatabaseConnection",
+            "RABBITMQ_PASSWORD",
+            "AZURE_STORAGE_CONNECTION_STRING",
+        },
+        f"{label}: normalizer secret scope mismatch (got {secret_env!r})",
     )
     for forbidden in ("STRIPE_API_KEY", "REDIS_PASSWORD", "OPENROUTER_API_KEY"):
-        f.check(forbidden not in env, f"staging: normalizer must not receive {forbidden}")
+        f.check(forbidden not in env, f"{label}: normalizer must not receive {forbidden}")
 
     command_blob = "\n".join(
         str(item) for item in ((container.get("command") or []) + (container.get("args") or []))
     )
     f.check(
         "ConnectionStrings__rabbitmq" in command_blob and "RABBITMQ_PASSWORD" in command_blob,
-        "staging: normalizer must construct the RabbitMQ connection string from platform config",
+        f"{label}: normalizer must construct the RabbitMQ connection string from platform config",
     )
-    f.check("ConnectionStrings__redis" not in command_blob, "staging: normalizer must not configure Redis")
+    f.check(
+        "ConnectionStrings__redis" not in command_blob,
+        f"{label}: normalizer must not configure Redis",
+    )
 
     resources = container.get("resources") or {}
     limits = resources.get("limits") or {}
-    f.check(limits.get("memory") == "1Gi", "staging: normalizer memory limit must equal 1Gi")
+    f.check(limits.get("memory") == "1Gi", f"{label}: normalizer memory limit must equal 1Gi")
 
     mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
     volumes = {v.get("name"): v for v in (pod.get("volumes") or [])}
@@ -328,21 +350,25 @@ def assert_staging_normalization_contract(
     spool_volume = volumes.get("vision-normalization-spool") or {}
     f.check(
         spool_mount.get("mountPath") == NORMALIZATION_SPOOL_DIRECTORY,
-        "staging: normalizer spool volume mount path",
+        f"{label}: normalizer spool volume mount path",
     )
     f.check(
         (spool_volume.get("emptyDir") or {}).get("sizeLimit") == "2560Mi",
-        "staging: normalizer emptyDir spool sizeLimit must equal quota plus headroom (2560Mi)",
+        f"{label}: normalizer emptyDir spool sizeLimit must equal quota plus headroom (2560Mi)",
     )
 
     for probe_name in ("livenessProbe", "readinessProbe", "startupProbe"):
         probe = container.get(probe_name) or {}
         command = (probe.get("exec") or {}).get("command") or []
-        f.check(bool(command), f"staging: normalizer {probe_name} must use an exec process probe")
-        f.check("httpGet" not in probe and "tcpSocket" not in probe,
-                f"staging: normalizer {probe_name} must not use an HTTP/TCP probe")
-        f.check("kill -0 1" in " ".join(str(part) for part in command),
-                f"staging: normalizer {probe_name} must check the worker process")
+        f.check(bool(command), f"{label}: normalizer {probe_name} must use an exec process probe")
+        f.check(
+            "httpGet" not in probe and "tcpSocket" not in probe,
+            f"{label}: normalizer {probe_name} must not use an HTTP/TCP probe",
+        )
+        f.check(
+            "kill -0 1" in " ".join(str(part) for part in command),
+            f"{label}: normalizer {probe_name} must check the worker process",
+        )
 
     backend = find_docs(docs, "Deployment", "tranzr-service")
     if backend:
@@ -355,37 +381,40 @@ def assert_staging_normalization_contract(
             "Vision__Normalization__QueueName": NORMALIZATION_QUEUE,
         }
         for key, value in api_expected.items():
-            f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
+            f.check(be.get(key) == value, f"{label}: API {key} == {value!r}")
         f.check(
             be.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: API {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{label}: API {MEDIA_NORMALIZATION_POLICY_KEY} == "
             f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
         )
         f.check(
             be.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: API {NORMALIZATION_POLICY_KEY} == "
+            f"{label}: API {NORMALIZATION_POLICY_KEY} == "
             f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
         )
         f.check(
             "Vision__Normalization__TransitionFromMode" not in be,
-            "staging: stable async API must not own a transition source",
+            f"{label}: stable async API must not own a transition source",
         )
         f.check(
             "Vision__Normalization__TransitionOperationId" not in be,
-            "staging: stable async API must not own a transition operation ID",
+            f"{label}: stable async API must not own a transition operation ID",
         )
         f.check(
-            (((backend[0].get("metadata") or {}).get("annotations") or {}).get(
-                "argocd.argoproj.io/sync-wave"
-            )) == "0",
-            "staging: API transition owner must complete in Argo sync wave 0",
+            (
+                ((backend[0].get("metadata") or {}).get("annotations") or {}).get(
+                    "argocd.argoproj.io/sync-wave"
+                )
+            )
+            == "0",
+            f"{label}: API transition owner must complete in Argo sync wave 0",
         )
         for key in (
             "Vision__Normalization__SpoolDirectory",
             "Vision__Normalization__SpoolQuotaBytes",
             "Vision__Normalization__SpoolFreeSpaceHeadroomBytes",
         ):
-            f.check(key not in be, f"staging: API must not receive worker-only {key}")
+            f.check(key not in be, f"{label}: API must not receive worker-only {key}")
 
     processor = find_docs(docs, "Deployment", "worker-processor")
     scheduler = find_docs(docs, "Deployment", "worker-scheduler")
@@ -398,29 +427,29 @@ def assert_staging_normalization_contract(
         }
         f.check(
             not consumer_norm,
-            f"staging: existing processor must not become a normalization consumer "
+            f"{label}: existing processor must not become a normalization consumer "
             f"(got {consumer_norm!r})",
         )
         f.check(
             pe.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: processor {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{label}: processor {MEDIA_NORMALIZATION_POLICY_KEY} == "
             f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
         )
         f.check(
             pe.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: processor {NORMALIZATION_POLICY_KEY} == "
+            f"{label}: processor {NORMALIZATION_POLICY_KEY} == "
             f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
         )
     if scheduler:
         se = container_env(scheduler[0])
         f.check(
             not normalization_env(se),
-            f"staging: existing scheduler must not become a normalization consumer "
+            f"{label}: existing scheduler must not become a normalization consumer "
             f"(got {normalization_env(se)!r})",
         )
         f.check(
             se.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{label}: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == "
             f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
         )
 
@@ -438,7 +467,7 @@ def assert_staging_normalization_contract(
         got = container_env(doc_list[0]).get(key)
         f.check(
             got == worker_media == NATIVE_NORMALIZATION_POLICY_VERSION,
-            f"staging: {role} {key} must agree with normalizer native policy "
+            f"{label}: {role} {key} must agree with normalizer native policy "
             f"(role={got!r} worker={worker_media!r})",
         )
 
@@ -530,16 +559,10 @@ def allowed_content_types_from_env(env: dict[str, Any]) -> list[str]:
 def assert_allowed_content_types_contract(
     f: Failures,
     *,
-    staging_docs: list[dict[str, Any]],
-    production_docs: list[dict[str, Any]],
-    default_docs: list[dict[str, Any]],
+    labels_docs: list[tuple[str, list[dict[str, Any]]]],
 ) -> None:
-    """Staging API pins the five-MIME native allowlist; shared/production keep app defaults."""
-    for label, docs in (
-        ("default", default_docs),
-        ("production", production_docs),
-        ("staging", staging_docs),
-    ):
+    """API pins the five-MIME native allowlist; processor/scheduler omit env (app defaults)."""
+    for label, docs in labels_docs:
         for role, name_substr in (
             ("API", "tranzr-service"),
             ("processor", "worker-processor"),
@@ -562,11 +585,11 @@ def assert_allowed_content_types_contract(
             ]
             f.check(not stray, f"{label}: {role} stray AllowedContentTypes keys {stray!r}")
 
-            if label == "staging" and role == "API":
+            if role == "API":
                 f.check(
-                    got == list(STAGING_API_ALLOWED_CONTENT_TYPES),
-                    f"staging: API AllowedContentTypes must be exactly "
-                    f"{list(STAGING_API_ALLOWED_CONTENT_TYPES)!r} (got {got!r})",
+                    got == list(API_ALLOWED_CONTENT_TYPES),
+                    f"{label}: API AllowedContentTypes must be exactly "
+                    f"{list(API_ALLOWED_CONTENT_TYPES)!r} (got {got!r})",
                 )
             else:
                 f.check(
@@ -579,12 +602,7 @@ def assert_allowed_content_types_contract(
 def assert_staging_production_vision_contract(
     f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
 ) -> None:
-    """Staging and production keep parity for the pre-existing Vision env contract.
-
-    Native normalization policy identity and staging API AllowedContentTypes are
-    staging-only (0.122.5+ / 0.122.6+) and are excluded from this parity check;
-    see assert_normalization_policy_identity and assert_allowed_content_types_contract.
-    """
+    """Staging and production keep full Vision__* env parity (shared photo defaults)."""
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -595,20 +613,8 @@ def assert_staging_production_vision_contract(
         f.check(len(stg) == 1 and len(prod) == 1, f"contract: {role} Deployments present")
         if not (stg and prod):
             continue
-        # The queued normalization foundation is intentionally staging-only;
-        # all pre-existing Vision contracts must retain staging/prod parity.
-        stg_contract = {
-            key: value
-            for key, value in vision_env_contract(stg[0]).items()
-            if not key.startswith(NORMALIZATION_ENV_PREFIX)
-            and key not in POLICY_PARITY_EXCLUDE_KEYS
-        }
-        prod_contract = {
-            key: value
-            for key, value in vision_env_contract(prod[0]).items()
-            if not key.startswith(NORMALIZATION_ENV_PREFIX)
-            and key not in POLICY_PARITY_EXCLUDE_KEYS
-        }
+        stg_contract = vision_env_contract(stg[0])
+        prod_contract = vision_env_contract(prod[0])
         f.check(
             stg_contract == prod_contract,
             f"contract: staging vs production {role} Vision__* env mismatch "
@@ -619,50 +625,24 @@ def assert_staging_production_vision_contract(
 def assert_normalization_policy_identity(
     f: Failures,
     *,
-    default_docs: list[dict[str, Any]],
-    staging_docs: list[dict[str, Any]],
-    production_docs: list[dict[str, Any]],
+    labels_docs: list[tuple[str, list[dict[str, Any]]]],
 ) -> None:
-    """Staging pins native v3; shared/default and production remain legacy norm-v1."""
-    for label, docs, expected in (
-        ("default", default_docs, LEGACY_NORMALIZATION_POLICY_VERSION),
-        ("production", production_docs, LEGACY_NORMALIZATION_POLICY_VERSION),
-        ("staging", staging_docs, NATIVE_NORMALIZATION_POLICY_VERSION),
-    ):
+    """Shared/default, staging, and production pin native v3 with VisionNormalizer enabled."""
+    for label, docs in labels_docs:
         scheduler = find_docs(docs, "Deployment", "worker-scheduler")
         f.check(len(scheduler) == 1, f"{label}: scheduler present for policy identity")
         if not scheduler:
             continue
         got = container_env(scheduler[0]).get(MEDIA_NORMALIZATION_POLICY_KEY)
         f.check(
-            got == expected,
-            f"{label}: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == {expected!r} "
-            f"(got {got!r})",
+            got == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"{label}: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r} (got {got!r})",
         )
-
-    # Shared/default and production must not emit native worker policy keys.
-    for label, docs in (("default", default_docs), ("production", production_docs)):
         f.check(
-            not find_docs(docs, "Deployment", "worker-vision-normalizer"),
-            f"{label}: VisionNormalizer must stay disabled under legacy policy",
+            len(find_docs(docs, "Deployment", "worker-vision-normalizer")) == 1,
+            f"{label}: VisionNormalizer must be enabled under native async policy",
         )
-        for role, name_substr in (
-            ("API", "tranzr-service"),
-            ("processor", "worker-processor"),
-        ):
-            matches = find_docs(docs, "Deployment", name_substr)
-            if not matches:
-                continue
-            env = container_env(matches[0])
-            f.check(
-                env.get(MEDIA_NORMALIZATION_POLICY_KEY) in (None, LEGACY_NORMALIZATION_POLICY_VERSION),
-                f"{label}: {role} must not pin native media policy "
-                f"(got {env.get(MEDIA_NORMALIZATION_POLICY_KEY)!r})",
-            )
-            f.check(
-                NORMALIZATION_POLICY_KEY not in env,
-                f"{label}: {role} must not emit {NORMALIZATION_POLICY_KEY}",
-            )
 
 
 def assert_api_secrets(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
@@ -733,14 +713,9 @@ def assert_scheduler(f: Failures, label: str, docs: list[dict[str, Any]], *, ret
         se.get("Vision__Media__RetentionPolicyVersion") == "retention-policy-v1",
         f"{label}: retention policy version",
     )
-    expected_policy = (
-        NATIVE_NORMALIZATION_POLICY_VERSION
-        if label == "staging"
-        else LEGACY_NORMALIZATION_POLICY_VERSION
-    )
     f.check(
-        se.get(MEDIA_NORMALIZATION_POLICY_KEY) == expected_policy,
-        f"{label}: normalization policy version == {expected_policy!r}",
+        se.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+        f"{label}: normalization policy version == {NATIVE_NORMALIZATION_POLICY_VERSION!r}",
     )
     f.check(se.get("Vision__Media__IntentTtlMinutes") == "10", f"{label}: intent TTL")
     f.check(se.get("Vision__Media__UnverifiedIntentGraceMinutes") == "120", f"{label}: unverified grace")
@@ -792,10 +767,10 @@ def assert_openrouter_externalsecret(f: Failures, label: str, docs: list[dict[st
 
 def assert_prod_images(f: Failures, docs: list[dict[str, Any]]) -> None:
     expected = {
-        "tranzr-service": f"ghcr.io/tranz-r/tranzr-moves-services:{PROD_VERSION}",
-        "worker-processor": f"ghcr.io/tranz-r/tranzr-moves-worker:{PROD_VERSION}",
-        "worker-scheduler": f"ghcr.io/tranz-r/tranzr-moves-worker:{PROD_VERSION}",
-        "db-migration": f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
+        "tranzr-service": f"ghcr.io/tranz-r/tranzr-moves-services:{SHARED_MOVES_VERSION}",
+        "worker-processor": f"ghcr.io/tranz-r/tranzr-moves-worker:{SHARED_MOVES_VERSION}",
+        "worker-scheduler": f"ghcr.io/tranz-r/tranzr-moves-worker:{SHARED_MOVES_VERSION}",
+        "db-migration": f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{SHARED_MOVES_VERSION}",
     }
     for name_substr, image in expected.items():
         kind = "Job" if name_substr == "db-migration" else "Deployment"
@@ -811,8 +786,8 @@ def assert_migration_enabled(f: Failures, docs: list[dict[str, Any]]) -> None:
     f.check(len(jobs) >= 1, "production: db-migration Job must be rendered (enabled)")
     if jobs:
         f.check(
-            container_image(jobs[0]) == f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{PROD_VERSION}",
-            "production: migrator image must be 0.121.5",
+            container_image(jobs[0]) == f"ghcr.io/tranz-r/tranzr-moves-db-migrator:{SHARED_MOVES_VERSION}",
+            f"production: migrator image must be {SHARED_MOVES_VERSION}",
         )
 
 
@@ -848,21 +823,23 @@ def main() -> int:
     staging_docs = load_docs(staging_render)
     production_docs = load_docs(production_render)
 
-    staging_backend = find_docs(staging_docs, "Deployment", "tranzr-service")
-    if staging_backend:
-        img = container_image(staging_backend[0])
-        failures.check(
-            img == f"ghcr.io/tranz-r/tranzr-moves-services:{STAGING_VERSION}",
-            f"staging: backend image {img!r} != compatible release {STAGING_VERSION!r}",
-        )
-        print(f"PASS staging image renders ({img})")
-
-    # Shared baseline activates Vision in default, staging, and production.
-    for label, docs in (
+    common_labels_docs = (
         ("default", default_docs),
         ("staging", staging_docs),
         ("production", production_docs),
-    ):
+    )
+    for label, docs in common_labels_docs:
+        backend = find_docs(docs, "Deployment", "tranzr-service")
+        if backend:
+            img = container_image(backend[0])
+            failures.check(
+                img == f"ghcr.io/tranz-r/tranzr-moves-services:{SHARED_MOVES_VERSION}",
+                f"{label}: backend image {img!r} != shared release {SHARED_MOVES_VERSION!r}",
+            )
+    print(f"PASS shared moves image {SHARED_MOVES_VERSION} (default + staging + production)")
+
+    # Shared baseline activates Vision in default, staging, and production.
+    for label, docs in common_labels_docs:
         assert_active_vision(failures, label, docs)
     print("PASS active Vision gates (default + staging + production)")
     print("PASS API Fake / includeConsumer false / hub false (all three)")
@@ -877,46 +854,31 @@ def main() -> int:
     )
 
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
-    print("PASS staging/production pre-normalization Vision__* env contract identical")
+    print("PASS staging/production Vision__* env contract identical")
 
-    assert_allowed_content_types_contract(
-        failures,
-        staging_docs=staging_docs,
-        production_docs=production_docs,
-        default_docs=default_docs,
-    )
+    assert_allowed_content_types_contract(failures, labels_docs=list(common_labels_docs))
     print(
         "PASS AllowedContentTypes "
-        f"(staging API exact {list(STAGING_API_ALLOWED_CONTENT_TYPES)}; "
-        "default/production/non-API omit env → app defaults)"
+        f"(API exact {list(API_ALLOWED_CONTENT_TYPES)} on default/staging/production; "
+        "non-API omit env → app defaults)"
     )
 
-    assert_normalization_policy_identity(
-        failures,
-        default_docs=default_docs,
-        staging_docs=staging_docs,
-        production_docs=production_docs,
-    )
+    assert_normalization_policy_identity(failures, labels_docs=list(common_labels_docs))
     print(
         "PASS normalization policy identity "
-        f"(staging={NATIVE_NORMALIZATION_POLICY_VERSION}; "
-        f"shared/production={LEGACY_NORMALIZATION_POLICY_VERSION})"
+        f"(default/staging/production={NATIVE_NORMALIZATION_POLICY_VERSION})"
     )
 
-    # Normalization is a staging-only deployment foundation. Default and production
-    # remain byte-for-byte dark with respect to the new workload and env contract.
-    assert_no_normalization_contract(failures, "default", default_docs)
-    assert_no_normalization_contract(failures, "production", production_docs)
-    assert_staging_normalization_contract(failures, staging_docs)
-    print("PASS default/production normalization contract remains absent")
+    for label, docs in common_labels_docs:
+        assert_async_normalization_contract(failures, label, docs)
     print(
-        "PASS staging VisionNormalizer workload, isolation, spool, probes, "
-        "native policy keys, and API producer contract"
+        "PASS shared VisionNormalizer AsyncQueue workload, isolation, spool, probes, "
+        "native policy keys, and API producer contract (default + staging + production)"
     )
 
     assert_prod_images(failures, production_docs)
     assert_migration_enabled(failures, production_docs)
-    print(f"PASS production images + migrator == {PROD_VERSION}")
+    print(f"PASS production images + migrator == {SHARED_MOVES_VERSION}")
 
     for label, docs in (
         ("default", default_docs),
@@ -980,7 +942,25 @@ def main() -> int:
         assert_confirmation_activation_contract(
             failures, "rollback", be, pe, se, api_expected="false"
         )
+        # Messaging rollback must not darken the shared photo runtime contract.
+        rollback_backend = find_docs(rollback_docs, "Deployment", "tranzr-service")[0]
+        failures.check(
+            container_image(rollback_backend)
+            == f"ghcr.io/tranz-r/tranzr-moves-services:{SHARED_MOVES_VERSION}",
+            "rollback: shared moves image must remain pinned",
+        )
+        assert_async_normalization_contract(failures, "rollback", rollback_docs)
+        assert_allowed_content_types_contract(
+            failures, labels_docs=[("rollback", rollback_docs)]
+        )
+        assert_normalization_policy_identity(
+            failures, labels_docs=[("rollback", rollback_docs)]
+        )
         print("PASS rollback/dark override returns messaging/provider/retention to off/Fake")
+        print(
+            "PASS rollback keeps common photo runtime "
+            f"({SHARED_MOVES_VERSION} / native AsyncQueue / five API MIME)"
+        )
         print(
             "PASS catalogue-learning contract unchanged under messaging/provider/retention rollback "
             "(categoryAware=true; candidate/admin/manufacturer=false)"
@@ -1164,7 +1144,7 @@ def main() -> int:
         )
         print("PASS mutation self-test rejects missing confirmation activation key")
 
-        # Mutation self-test: staging worker policy drift vs features media policy fails closed.
+        # Mutation self-test: worker policy drift vs features media policy fails closed.
         drift_override = tmp_path / "policy-drift.yaml"
         write_override(
             drift_override,
@@ -1181,14 +1161,16 @@ def main() -> int:
         try:
             drift_render = helm_template(
                 "trm-mut-policy-drift",
-                [VALUES_DEFAULT, VALUES_STAGING],
+                [VALUES_DEFAULT],
                 extra_values_file=drift_override,
             )
         except RuntimeError as exc:
             print(exc, file=sys.stderr)
             return 1
         drift_failures = Failures()
-        assert_staging_normalization_contract(drift_failures, load_docs(drift_render))
+        assert_async_normalization_contract(
+            drift_failures, "mutation-policy-drift", load_docs(drift_render)
+        )
         policy_drift_rejected = any(
             "must agree with normalizer native policy" in msg
             or (
@@ -1202,7 +1184,7 @@ def main() -> int:
             policy_drift_rejected,
             "mutation self-test: worker policyVersion drift from native v3 must fail closed",
         )
-        print("PASS mutation self-test rejects staging native policy drift")
+        print("PASS mutation self-test rejects native policy drift")
 
     for path in (
         VALUES_DEFAULT,
