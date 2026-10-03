@@ -219,6 +219,14 @@ Usage: {{ include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
   value: {{ $v.provider.api | quote }}
 - name: Vision__Media__Container
   value: {{ $v.media.container | quote }}
+- name: Vision__Media__NormalizationPolicyVersion
+  value: {{ $v.media.normalizationPolicyVersion | quote }}
+- name: Vision__Normalization__NormalizationPolicyVersion
+  value: {{ $v.media.normalizationPolicyVersion | quote }}
+{{- range $index, $contentType := $v.media.allowedContentTypes }}
+- name: Vision__Media__AllowedContentTypes__{{ $index }}
+  value: {{ $contentType | quote }}
+{{- end }}
 - name: Vision__ConfirmationReview__ActivationEnabled
   value: {{ $v.confirmationReview.activationEnabled | quote }}
 {{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
@@ -249,6 +257,10 @@ Usage: {{ include "tranzrmoves.visionProcessorEnv" (dict "root" .) | nindent 12 
   value: {{ $v.openRouter.maxConcurrentRequests | quote }}
 - name: Vision__Media__Container
   value: {{ $v.media.container | quote }}
+- name: Vision__Media__NormalizationPolicyVersion
+  value: {{ $v.media.normalizationPolicyVersion | quote }}
+- name: Vision__Normalization__NormalizationPolicyVersion
+  value: {{ $v.media.normalizationPolicyVersion | quote }}
 {{- include "tranzrmoves.visionCatalogueLearningEnv" (dict "root" $root) | nindent 0 }}
 {{- end }}
 

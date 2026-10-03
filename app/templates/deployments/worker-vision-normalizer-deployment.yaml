@@ -76,8 +76,7 @@ spec:
             - name: Vision__Normalization__SpoolFreeSpaceHeadroomBytes
               value: {{ $worker.normalization.spoolFreeSpaceHeadroomBytes | quote }}
             {{- with $worker.normalization.policyVersion }}
-            # Staging-native policy identity only. Unset in shared/production so those
-            # renders stay byte-identical and keep app/chart defaults.
+            # Native policy identity (must match features.vision.media.normalizationPolicyVersion).
             - name: Vision__Media__NormalizationPolicyVersion
               value: {{ . | quote }}
             - name: Vision__Normalization__NormalizationPolicyVersion
