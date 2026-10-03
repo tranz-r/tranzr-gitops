@@ -25,7 +25,7 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
-STAGING_VERSION = "0.122.3"
+STAGING_VERSION = "0.122.5"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -33,6 +33,18 @@ NORMALIZATION_SPOOL_DIRECTORY = "/var/spool/tranzr/vision-normalization"
 NORMALIZATION_SPOOL_QUOTA_BYTES = "2147483648"
 NORMALIZATION_SPOOL_HEADROOM_BYTES = "536870912"
 NORMALIZATION_ENV_PREFIX = "Vision__Normalization__"
+MEDIA_NORMALIZATION_POLICY_KEY = "Vision__Media__NormalizationPolicyVersion"
+NORMALIZATION_POLICY_KEY = "Vision__Normalization__NormalizationPolicyVersion"
+# Shared/default + production keep the pre-native JPEG contract.
+LEGACY_NORMALIZATION_POLICY_VERSION = "norm-v1-jpeg-q85-s420"
+# Staging 0.122.5+ matches VipsVisionNormalizerOptions.ProductionNormalizationPolicyVersion.
+NATIVE_NORMALIZATION_POLICY_VERSION = "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
+POLICY_PARITY_EXCLUDE_KEYS = frozenset(
+    {
+        MEDIA_NORMALIZATION_POLICY_KEY,
+        NORMALIZATION_POLICY_KEY,
+    }
+)
 
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
@@ -249,6 +261,16 @@ def assert_staging_normalization_contract(
     for key, value in expected.items():
         f.check(env.get(key) == value, f"staging: normalizer {key} == {value!r}")
     f.check(
+        env.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+        f"staging: normalizer {MEDIA_NORMALIZATION_POLICY_KEY} == "
+        f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+    )
+    f.check(
+        env.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+        f"staging: normalizer {NORMALIZATION_POLICY_KEY} == "
+        f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+    )
+    f.check(
         "Vision__Normalization__TransitionFromMode" not in env,
         "staging: normalizer must not own the mode-transition source",
     )
@@ -322,6 +344,16 @@ def assert_staging_normalization_contract(
         for key, value in api_expected.items():
             f.check(be.get(key) == value, f"staging: API {key} == {value!r}")
         f.check(
+            be.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: API {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+        )
+        f.check(
+            be.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: API {NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+        )
+        f.check(
             "Vision__Normalization__TransitionFromMode" not in be,
             "staging: stable async API must not own a transition source",
         )
@@ -342,17 +374,60 @@ def assert_staging_normalization_contract(
         ):
             f.check(key not in be, f"staging: API must not receive worker-only {key}")
 
-    for role, name_substr in (
-        ("processor", "worker-processor"),
-        ("scheduler", "worker-scheduler"),
+    processor = find_docs(docs, "Deployment", "worker-processor")
+    scheduler = find_docs(docs, "Deployment", "worker-scheduler")
+    if processor:
+        pe = container_env(processor[0])
+        consumer_norm = {
+            key: value
+            for key, value in normalization_env(pe).items()
+            if key != NORMALIZATION_POLICY_KEY
+        }
+        f.check(
+            not consumer_norm,
+            f"staging: existing processor must not become a normalization consumer "
+            f"(got {consumer_norm!r})",
+        )
+        f.check(
+            pe.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: processor {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+        )
+        f.check(
+            pe.get(NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: processor {NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+        )
+    if scheduler:
+        se = container_env(scheduler[0])
+        f.check(
+            not normalization_env(se),
+            f"staging: existing scheduler must not become a normalization consumer "
+            f"(got {normalization_env(se)!r})",
+        )
+        f.check(
+            se.get(MEDIA_NORMALIZATION_POLICY_KEY) == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == "
+            f"{NATIVE_NORMALIZATION_POLICY_VERSION!r}",
+        )
+
+    # Fleet identity: API / processor / scheduler media policy must match the worker.
+    worker_media = env.get(MEDIA_NORMALIZATION_POLICY_KEY)
+    for role, doc_list, key in (
+        ("API", backend, MEDIA_NORMALIZATION_POLICY_KEY),
+        ("API", backend, NORMALIZATION_POLICY_KEY),
+        ("processor", processor, MEDIA_NORMALIZATION_POLICY_KEY),
+        ("processor", processor, NORMALIZATION_POLICY_KEY),
+        ("scheduler", scheduler, MEDIA_NORMALIZATION_POLICY_KEY),
     ):
-        matches = find_docs(docs, "Deployment", name_substr)
-        if matches:
-            got = normalization_env(container_env(matches[0]))
-            f.check(
-                not got,
-                f"staging: existing {role} must not become a normalization consumer (got {got!r})",
-            )
+        if not doc_list:
+            continue
+        got = container_env(doc_list[0]).get(key)
+        f.check(
+            got == worker_media == NATIVE_NORMALIZATION_POLICY_VERSION,
+            f"staging: {role} {key} must agree with normalizer native policy "
+            f"(role={got!r} worker={worker_media!r})",
+        )
 
 
 def secret_ref_key(env_val: Any) -> str | None:
@@ -428,7 +503,11 @@ def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) ->
 def assert_staging_production_vision_contract(
     f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
 ) -> None:
-    """Staging and production keep parity for the pre-existing Vision env contract."""
+    """Staging and production keep parity for the pre-existing Vision env contract.
+
+    Native normalization policy identity is staging-only (0.122.5+) and is excluded
+    from this parity check; see assert_normalization_policy_identity.
+    """
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -445,17 +524,68 @@ def assert_staging_production_vision_contract(
             key: value
             for key, value in vision_env_contract(stg[0]).items()
             if not key.startswith(NORMALIZATION_ENV_PREFIX)
+            and key not in POLICY_PARITY_EXCLUDE_KEYS
         }
         prod_contract = {
             key: value
             for key, value in vision_env_contract(prod[0]).items()
             if not key.startswith(NORMALIZATION_ENV_PREFIX)
+            and key not in POLICY_PARITY_EXCLUDE_KEYS
         }
         f.check(
             stg_contract == prod_contract,
             f"contract: staging vs production {role} Vision__* env mismatch "
             f"(staging={stg_contract!r} production={prod_contract!r})",
         )
+
+
+def assert_normalization_policy_identity(
+    f: Failures,
+    *,
+    default_docs: list[dict[str, Any]],
+    staging_docs: list[dict[str, Any]],
+    production_docs: list[dict[str, Any]],
+) -> None:
+    """Staging pins native v3; shared/default and production remain legacy norm-v1."""
+    for label, docs, expected in (
+        ("default", default_docs, LEGACY_NORMALIZATION_POLICY_VERSION),
+        ("production", production_docs, LEGACY_NORMALIZATION_POLICY_VERSION),
+        ("staging", staging_docs, NATIVE_NORMALIZATION_POLICY_VERSION),
+    ):
+        scheduler = find_docs(docs, "Deployment", "worker-scheduler")
+        f.check(len(scheduler) == 1, f"{label}: scheduler present for policy identity")
+        if not scheduler:
+            continue
+        got = container_env(scheduler[0]).get(MEDIA_NORMALIZATION_POLICY_KEY)
+        f.check(
+            got == expected,
+            f"{label}: scheduler {MEDIA_NORMALIZATION_POLICY_KEY} == {expected!r} "
+            f"(got {got!r})",
+        )
+
+    # Shared/default and production must not emit native worker policy keys.
+    for label, docs in (("default", default_docs), ("production", production_docs)):
+        f.check(
+            not find_docs(docs, "Deployment", "worker-vision-normalizer"),
+            f"{label}: VisionNormalizer must stay disabled under legacy policy",
+        )
+        for role, name_substr in (
+            ("API", "tranzr-service"),
+            ("processor", "worker-processor"),
+        ):
+            matches = find_docs(docs, "Deployment", name_substr)
+            if not matches:
+                continue
+            env = container_env(matches[0])
+            f.check(
+                env.get(MEDIA_NORMALIZATION_POLICY_KEY) in (None, LEGACY_NORMALIZATION_POLICY_VERSION),
+                f"{label}: {role} must not pin native media policy "
+                f"(got {env.get(MEDIA_NORMALIZATION_POLICY_KEY)!r})",
+            )
+            f.check(
+                NORMALIZATION_POLICY_KEY not in env,
+                f"{label}: {role} must not emit {NORMALIZATION_POLICY_KEY}",
+            )
 
 
 def assert_api_secrets(f: Failures, label: str, docs: list[dict[str, Any]]) -> None:
@@ -526,9 +656,14 @@ def assert_scheduler(f: Failures, label: str, docs: list[dict[str, Any]], *, ret
         se.get("Vision__Media__RetentionPolicyVersion") == "retention-policy-v1",
         f"{label}: retention policy version",
     )
+    expected_policy = (
+        NATIVE_NORMALIZATION_POLICY_VERSION
+        if label == "staging"
+        else LEGACY_NORMALIZATION_POLICY_VERSION
+    )
     f.check(
-        se.get("Vision__Media__NormalizationPolicyVersion") == "norm-v1-jpeg-q85-s420",
-        f"{label}: normalization policy version",
+        se.get(MEDIA_NORMALIZATION_POLICY_KEY) == expected_policy,
+        f"{label}: normalization policy version == {expected_policy!r}",
     )
     f.check(se.get("Vision__Media__IntentTtlMinutes") == "10", f"{label}: intent TTL")
     f.check(se.get("Vision__Media__UnverifiedIntentGraceMinutes") == "120", f"{label}: unverified grace")
@@ -667,13 +802,28 @@ def main() -> int:
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
     print("PASS staging/production pre-normalization Vision__* env contract identical")
 
+    assert_normalization_policy_identity(
+        failures,
+        default_docs=default_docs,
+        staging_docs=staging_docs,
+        production_docs=production_docs,
+    )
+    print(
+        "PASS normalization policy identity "
+        f"(staging={NATIVE_NORMALIZATION_POLICY_VERSION}; "
+        f"shared/production={LEGACY_NORMALIZATION_POLICY_VERSION})"
+    )
+
     # Normalization is a staging-only deployment foundation. Default and production
     # remain byte-for-byte dark with respect to the new workload and env contract.
     assert_no_normalization_contract(failures, "default", default_docs)
     assert_no_normalization_contract(failures, "production", production_docs)
     assert_staging_normalization_contract(failures, staging_docs)
     print("PASS default/production normalization contract remains absent")
-    print("PASS staging VisionNormalizer workload, isolation, spool, probes, and API producer contract")
+    print(
+        "PASS staging VisionNormalizer workload, isolation, spool, probes, "
+        "native policy keys, and API producer contract"
+    )
 
     assert_prod_images(failures, production_docs)
     assert_migration_enabled(failures, production_docs)
@@ -924,6 +1074,46 @@ def main() -> int:
             "by confirmation activation contract",
         )
         print("PASS mutation self-test rejects missing confirmation activation key")
+
+        # Mutation self-test: staging worker policy drift vs features media policy fails closed.
+        drift_override = tmp_path / "policy-drift.yaml"
+        write_override(
+            drift_override,
+            {
+                "deployments": {
+                    "workerVisionNormalizer": {
+                        "normalization": {
+                            "policyVersion": LEGACY_NORMALIZATION_POLICY_VERSION,
+                        }
+                    }
+                }
+            },
+        )
+        try:
+            drift_render = helm_template(
+                "trm-mut-policy-drift",
+                [VALUES_DEFAULT, VALUES_STAGING],
+                extra_values_file=drift_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        drift_failures = Failures()
+        assert_staging_normalization_contract(drift_failures, load_docs(drift_render))
+        policy_drift_rejected = any(
+            "must agree with normalizer native policy" in msg
+            or (
+                "normalizer" in msg
+                and MEDIA_NORMALIZATION_POLICY_KEY in msg
+                and NATIVE_NORMALIZATION_POLICY_VERSION in msg
+            )
+            for msg in drift_failures
+        )
+        failures.check(
+            policy_drift_rejected,
+            "mutation self-test: worker policyVersion drift from native v3 must fail closed",
+        )
+        print("PASS mutation self-test rejects staging native policy drift")
 
     for path in (
         VALUES_DEFAULT,

@@ -75,6 +75,14 @@ spec:
               value: {{ $worker.normalization.spoolQuotaBytes | quote }}
             - name: Vision__Normalization__SpoolFreeSpaceHeadroomBytes
               value: {{ $worker.normalization.spoolFreeSpaceHeadroomBytes | quote }}
+            {{- with $worker.normalization.policyVersion }}
+            # Staging-native policy identity only. Unset in shared/production so those
+            # renders stay byte-identical and keep app/chart defaults.
+            - name: Vision__Media__NormalizationPolicyVersion
+              value: {{ . | quote }}
+            - name: Vision__Normalization__NormalizationPolicyVersion
+              value: {{ . | quote }}
+            {{- end }}
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
