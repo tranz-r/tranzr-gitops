@@ -25,7 +25,7 @@ VALUES_STAGING = CHART / "values-staging.yaml"
 VALUES_PRODUCTION = CHART / "values-production.yaml"
 
 PROD_VERSION = "0.121.5"
-STAGING_VERSION = "0.122.5"
+STAGING_VERSION = "0.122.6"
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
 AZURE_STORAGE_SECRET_KEY = "tranzr-azure-storage-connection-string"
 NORMALIZATION_QUEUE = "vision-normalization-v1"
@@ -35,6 +35,15 @@ NORMALIZATION_SPOOL_HEADROOM_BYTES = "536870912"
 NORMALIZATION_ENV_PREFIX = "Vision__Normalization__"
 MEDIA_NORMALIZATION_POLICY_KEY = "Vision__Media__NormalizationPolicyVersion"
 NORMALIZATION_POLICY_KEY = "Vision__Normalization__NormalizationPolicyVersion"
+ALLOWED_CONTENT_TYPES_ENV_PREFIX = "Vision__Media__AllowedContentTypes__"
+# Staging API native async advertisement allowlist (JPEG/PNG/WebP + still-HEVC aliases).
+STAGING_API_ALLOWED_CONTENT_TYPES = (
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+)
 # Shared/default + production keep the pre-native JPEG contract.
 LEGACY_NORMALIZATION_POLICY_VERSION = "norm-v1-jpeg-q85-s420"
 # Staging 0.122.5+ matches VipsVisionNormalizerOptions.ProductionNormalizationPolicyVersion.
@@ -43,6 +52,10 @@ POLICY_PARITY_EXCLUDE_KEYS = frozenset(
     {
         MEDIA_NORMALIZATION_POLICY_KEY,
         NORMALIZATION_POLICY_KEY,
+        *(
+            f"{ALLOWED_CONTENT_TYPES_ENV_PREFIX}{i}"
+            for i in range(len(STAGING_API_ALLOWED_CONTENT_TYPES))
+        ),
     }
 )
 
@@ -500,13 +513,77 @@ def assert_active_vision(f: Failures, label: str, docs: list[dict[str, Any]]) ->
     assert_confirmation_activation_contract(f, label, be, pe, se, api_expected="true")
 
 
+def allowed_content_types_from_env(env: dict[str, Any]) -> list[str]:
+    """Collect Vision__Media__AllowedContentTypes__N literals in index order."""
+    indexed: list[tuple[int, str]] = []
+    for key, value in env.items():
+        if not key.startswith(ALLOWED_CONTENT_TYPES_ENV_PREFIX):
+            continue
+        suffix = key[len(ALLOWED_CONTENT_TYPES_ENV_PREFIX) :]
+        if not suffix.isdigit() or not isinstance(value, str):
+            continue
+        indexed.append((int(suffix), value))
+    indexed.sort(key=lambda item: item[0])
+    return [value for _, value in indexed]
+
+
+def assert_allowed_content_types_contract(
+    f: Failures,
+    *,
+    staging_docs: list[dict[str, Any]],
+    production_docs: list[dict[str, Any]],
+    default_docs: list[dict[str, Any]],
+) -> None:
+    """Staging API pins the five-MIME native allowlist; shared/production keep app defaults."""
+    for label, docs in (
+        ("default", default_docs),
+        ("production", production_docs),
+        ("staging", staging_docs),
+    ):
+        for role, name_substr in (
+            ("API", "tranzr-service"),
+            ("processor", "worker-processor"),
+            ("scheduler", "worker-scheduler"),
+        ):
+            matches = find_docs(docs, "Deployment", name_substr)
+            f.check(len(matches) == 1, f"{label}: {role} present for AllowedContentTypes")
+            if not matches:
+                continue
+            env = container_env(matches[0])
+            got = allowed_content_types_from_env(env)
+            stray = [
+                key
+                for key in env
+                if key.startswith(ALLOWED_CONTENT_TYPES_ENV_PREFIX)
+                and (
+                    not key[len(ALLOWED_CONTENT_TYPES_ENV_PREFIX) :].isdigit()
+                    or not isinstance(env.get(key), str)
+                )
+            ]
+            f.check(not stray, f"{label}: {role} stray AllowedContentTypes keys {stray!r}")
+
+            if label == "staging" and role == "API":
+                f.check(
+                    got == list(STAGING_API_ALLOWED_CONTENT_TYPES),
+                    f"staging: API AllowedContentTypes must be exactly "
+                    f"{list(STAGING_API_ALLOWED_CONTENT_TYPES)!r} (got {got!r})",
+                )
+            else:
+                f.check(
+                    not got,
+                    f"{label}: {role} must not emit AllowedContentTypes env "
+                    f"(app defaults / non-API; got {got!r})",
+                )
+
+
 def assert_staging_production_vision_contract(
     f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
 ) -> None:
     """Staging and production keep parity for the pre-existing Vision env contract.
 
-    Native normalization policy identity is staging-only (0.122.5+) and is excluded
-    from this parity check; see assert_normalization_policy_identity.
+    Native normalization policy identity and staging API AllowedContentTypes are
+    staging-only (0.122.5+ / 0.122.6+) and are excluded from this parity check;
+    see assert_normalization_policy_identity and assert_allowed_content_types_contract.
     """
     for role, name_substr in (
         ("API", "tranzr-service"),
@@ -801,6 +878,18 @@ def main() -> int:
 
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
     print("PASS staging/production pre-normalization Vision__* env contract identical")
+
+    assert_allowed_content_types_contract(
+        failures,
+        staging_docs=staging_docs,
+        production_docs=production_docs,
+        default_docs=default_docs,
+    )
+    print(
+        "PASS AllowedContentTypes "
+        f"(staging API exact {list(STAGING_API_ALLOWED_CONTENT_TYPES)}; "
+        "default/production/non-API omit env → app defaults)"
+    )
 
     assert_normalization_policy_identity(
         failures,
