@@ -6,9 +6,9 @@ pin / native AsyncQueue / five API MIME), and a temporary messaging
 rollback/dark override (no secrets / no cluster). Exit 0 only when all
 assertions pass.
 
-Also asserts the candidate VisionModeActuator Job contract (Helm hooks that
-Argo maps to PreSync when no explicit Argo hook appears in the render). That
-role is not in published 0.122.6 — template is candidate-only until a later tag.
+Also asserts the published VisionModeActuator Job contract (Helm hooks that
+Argo maps to PreSync when no explicit Argo hook appears in the render).
+Release pin 0.122.7 publishes WorkerRole.VisionModeActuator.
 """
 
 from __future__ import annotations
@@ -55,8 +55,16 @@ def _activation_contract_revision(values: dict[str, Any]) -> str:
     return revision
 
 
+# Hard release pin — must match images.movesVersion (feeds 8 workloads + activation Job).
+SHARED_MOVES_VERSION = "0.122.7"
+
 _DEFAULT_VALUES = _load_default_values()
-SHARED_MOVES_VERSION = _shared_moves_version(_DEFAULT_VALUES)
+_VALUES_MOVES_VERSION = _shared_moves_version(_DEFAULT_VALUES)
+if _VALUES_MOVES_VERSION != SHARED_MOVES_VERSION:
+    raise RuntimeError(
+        f"images.movesVersion {_VALUES_MOVES_VERSION!r} != release pin "
+        f"{SHARED_MOVES_VERSION!r}"
+    )
 ACTIVATION_CONTRACT_REVISION = _activation_contract_revision(_DEFAULT_VALUES)
 ACTIVATION_DEPLOYMENT_IDENTITY = (
     f"moves-{SHARED_MOVES_VERSION}-{ACTIVATION_CONTRACT_REVISION}"
@@ -498,7 +506,7 @@ def assert_no_vision_mode_activation_job(
 def assert_vision_mode_activation_contract(
     f: Failures, label: str, docs: list[dict[str, Any]], *, db_secret_key: str
 ) -> None:
-    """Shared AsyncQueue + normalizer-on → candidate Helm-hook activation Job.
+    """Shared AsyncQueue + normalizer-on → published Helm-hook activation Job.
 
     Effective Argo phase is PreSync via Helm→Argo mapping when no explicit
     Argo hook exists anywhere in the render (docs/user-guide/helm.md).
@@ -1366,9 +1374,9 @@ def main() -> int:
             failures, label, docs, db_secret_key=db_secret
         )
     print(
-        "PASS candidate VisionModeActuator Helm→PreSync Job contract "
+        "PASS published VisionModeActuator Helm→PreSync Job contract "
         f"(identity={ACTIVATION_DEPLOYMENT_IDENTITY}, helm-weight/effective-wave=2, "
-        "DB-only; no explicit Argo hooks; role not in published 0.122.6 — pin bump blocked)"
+        f"DB-only; no explicit Argo hooks; role published in {SHARED_MOVES_VERSION})"
     )
 
     assert_prod_images(failures, production_docs)
@@ -1463,7 +1471,7 @@ def main() -> int:
             f"({SHARED_MOVES_VERSION} / native AsyncQueue / five API MIME)"
         )
         print(
-            "PASS rollback keeps candidate VisionModeActuator PreSync Job "
+            "PASS rollback keeps published VisionModeActuator PreSync Job "
             "(messaging dark ≠ mode rewrite / no auto-downgrade)"
         )
         print(

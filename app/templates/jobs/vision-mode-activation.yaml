@@ -1,8 +1,7 @@
 {{- /*
-  Candidate VisionModeActuator Job (Helm hooks only).
+  VisionModeActuator Job (Helm hooks only).
   Renders only for shared AsyncQueue + enabled VisionNormalizer.
-  Backend WorkerRole.VisionModeActuator is NOT in published 0.122.6 — keep
-  images.movesVersion unchanged until a verified later tag ships the role.
+  WorkerRole.VisionModeActuator is published in images.movesVersion 0.122.7.
   Use the same helm.sh/hook* shape as other prereqs so Argo maps them to
   PreSync / sync-wave / delete-policy. Do NOT set argocd.argoproj.io/hook
   anywhere in the render — one explicit Argo hook causes Argo to ignore ALL

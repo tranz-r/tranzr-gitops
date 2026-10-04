@@ -208,7 +208,7 @@ Generate locally: `pnpm generate-vapid-keys` in `desktop-webapp/apps/driver-port
 #### Vision V1 / Photo Inventory
 
 The shared `values.yaml` baseline is the common Photo Inventory runtime for
-**default, staging, and production**: moves `0.122.6`, native normalization policy
+**default, staging, and production**: moves `0.122.7`, native normalization policy
 `norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb`, VisionNormalizer enabled with stable
 `AsyncQueue` intake (`apiConsumerReady: true`, empty transition command fields),
 API MIME allowlist JPEG/PNG/WebP/HEIC/HEIF, API + processor messaging on, processor
@@ -224,7 +224,7 @@ silently drop the gates.
 
 | Gate / mapping | Shared baseline (`values.yaml`) |
 |---|---|
-| Image pin | `images.movesVersion: "0.122.6"` |
+| Image pin | `images.movesVersion: "0.122.7"` |
 | Native policy | `features.vision.media.normalizationPolicyVersion` (+ matching worker `policyVersion`) |
 | API MIME allowlist | `features.vision.media.allowedContentTypes` (API helper only) |
 | Async normalizer | `deployments.workerVisionNormalizer.enabled: true`, `intakeMode: AsyncQueue` |
@@ -240,9 +240,10 @@ Rollback to dark (values-only messaging path): set `apiMessagingEnabled` /
 `processorMessagingEnabled` to `false`, `provider.processor` to `Fake`,
 `media.retentionWorkerEnabled` to `false`, and `confirmationReview.activationEnabled`
 to `false`. Shared image / native AsyncQueue / API MIME remain the common contract
-unless separately overridden.
+unless separately overridden. Messaging rollback does **not** rewrite durable
+normalization mode and does **not** auto-downgrade `AsyncQueue`.
 
-**Candidate PreSync activation Job (this chart) — not production-actuated yet:**
+**Published PreSync activation Job (this chart):**
 When `workerVisionNormalizer.enabled` and `intakeMode: AsyncQueue`, the chart
 renders a fixed-name Job using the **same Helm hook annotations** as other
 prereqs (`helm.sh/hook: pre-install,pre-upgrade`, `helm.sh/hook-weight: "2"`,
@@ -257,55 +258,34 @@ hooks (including SA / ExternalSecrets / migrators / chatwoot).
 PreSync waves: SA `-10` → imagepull `-9` → app secrets `-8` → DB migration `0`
 → notifications migration `1` → activation actuator `2`; then Sync: API
 `argocd.argoproj.io/sync-wave: "0"` → VisionNormalizer `"1"` (ordinary sync-wave
-on Sync resources is fine; it is not a hook). Chatwoot migrate stays
-Helm `post-install,post-upgrade` → PostSync. Test hooks are unsupported/skipped.
+on Sync resources is fine; it is not a hook). Chatwoot migrate: default/staging
+Helm `post-install,post-upgrade` → PostSync; production overlay uses dual-phase
+`pre-install,post-upgrade`. Test hooks are unsupported/skipped.
 
-It runs `Worker__Role=VisionModeActuator` on the pinned `movesWorker` image with
-DB-only secrets (environment session/transaction pooler), deterministic
+It runs `Worker__Role=VisionModeActuator` on the pinned `movesWorker` image
+(`0.122.7` publishes that role) with DB-only secrets (environment
+session/transaction pooler), deterministic
 `DeploymentIdentity=moves-<movesVersion>-<contractRevision>`, and empty stable
 API `TransitionFromMode` / `TransitionOperationId` fields. Already-durable
-`AsyncQueue` is a NOOP (no authority mutation on later releases). Rollback does
-**not** auto-downgrade durable mode.
+`AsyncQueue` is a NOOP (no authority mutation on later releases).
 
-**Published-tag blocker:** `WorkerRole.VisionModeActuator` is **not** in the
-current shared pin `images.movesVersion: "0.122.6"`. This template is a
-**candidate** until a later verified backend release publishes that role and
-GitOps bumps the shared pin. Do **not** treat `0.122.6` as deployment-ready for
-activation; do **not** invent the next version here. Push/PR of this candidate
-stays blocked until that parent backend tag exists.
-
-**Production → main merge BLOCKED (schema + published role, not this PR alone):**
-Parent READONLY production schema confirms
-`tranzrmoves."VisionNormalizationRuntimeStates"` is **ABSENT**, and the adjacent
-durability tables (`VisionNormalizationJobs`, `VisionSourceNormalizations`) are
-also **ABSENT**. Production is still on image `0.121.5` without a native
-VisionNormalizer. The backend mode guard reads/writes those tables
-(`VisionNormalizationModeGuard` / assert-only API activation host):
-with empty transition fields the host **asserts** configured `IntakeMode` against
-the durable row; adjacent activation is only
-`LegacySync`→`IntakePaused`→`AsyncQueue` (never a direct Legacy→Async jump).
-Missing tables make activation **impossible** until migrators create them
-(foundation migration seeds `LegacySync`).
-
-This work is **stable shared Async config + candidate PreSync Job** only. It is
-**not** a deployment promise and must not be treated as a legal production jump.
-
-**Automated workflow (once a published image includes `VisionModeActuator`):**
-1. First-upgrade production moves image + migrators so normalization durability
-   schema exists while authority remains / becomes `LegacySync`.
+**Automated activation (replaces ad-hoc temporary API transition flags):**
+1. First-upgrade moves image + migrators so normalization durability schema
+   exists while authority remains / becomes `LegacySync` (foundation migration
+   seeds that mode). Adjacent activation is only
+   `LegacySync`→`IntakePaused`→`AsyncQueue` (never a direct Legacy→Async jump).
 2. PreSync activation Job derives edge operation IDs from
-   `DeploymentIdentity` and performs legal adjacent
-   `LegacySync`→`IntakePaused`→`AsyncQueue` (drain-bounded); later releases NOOP
-   when already Async. Manual one-time transition env knobs on the API are
-   **replaced** by this Job — keep stable API transition fields empty.
-3. Only after (1)+(2) with a verified published role tag is develop→main /
-   production apply of this stable Async config unblocked.
+   `DeploymentIdentity` and performs legal adjacent transitions (drain-bounded);
+   later releases NOOP when already Async. Keep stable API transition fields
+   empty — do not set temporary one-shot transition env knobs on the API.
+3. develop→main / production apply remains a separate manual promotion step
+   after the develop GitOps PR lands.
 
-Shared image pin (backend/worker/migrator) — unchanged until parent publishes:
+Shared image pin (backend/worker/migrator/notifications/whisper + activation Job):
 
 ```yaml
 images:
-  movesVersion: "0.122.6"
+  movesVersion: "0.122.7"
 ```
 
 Required Key Vault secret (processor only — never API, scheduler, gateway, frontend, or notifications):
