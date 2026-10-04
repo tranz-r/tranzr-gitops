@@ -111,7 +111,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.122.6"
+  movesVersion: "0.122.7"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -902,6 +902,28 @@ jobs:
     resources:
       requests:
         cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # VisionModeActuator Job (Helm pre-install/pre-upgrade weight 2).
+  # Argo maps to PreSync when no explicit argocd.argoproj.io/hook is in the render.
+  # Auto-renders only when workerVisionNormalizer.enabled && intakeMode=AsyncQueue.
+  # Published in images.movesVersion 0.122.7 (WorkerRole.VisionModeActuator).
+  # DeploymentIdentity = moves-<movesVersion>-<contractRevision> (no ad-hoc op IDs).
+  visionModeActivation:
+    enabled: true
+    # Stable chart configuration / activation-contract identity (ASCII token segment).
+    contractRevision: "activation-v1"
+    backoffLimit: 1
+    activeDeadlineSeconds: 180
+    restartPolicy: Never
+    activationDrainBudgetSeconds: 90
+    activationDrainPollSeconds: 2
+    resources:
+      requests:
+        cpu: 100m
         memory: 256Mi
       limits:
         cpu: 500m
