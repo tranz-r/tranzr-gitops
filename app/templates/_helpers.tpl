@@ -159,7 +159,11 @@ args:
     export ConnectionStrings__rabbitmq="amqp://{{ $root.Values.platformMessaging.rabbitmq.username }}:${RABBITMQ_PASSWORD}@{{ $root.Values.platformMessaging.rabbitmq.host }}:{{ $root.Values.platformMessaging.rabbitmq.port }}"
     {{- end }}
     {{- if $augmentDb }}
-    # Keyword Npgsql form: apply chart overrides (production transaction pooler by default).
+    {{- if eq (int $dbPort) 5432 }}
+    # Keyword Npgsql form: apply chart overrides (session pooler).
+    {{- else }}
+    # Keyword Npgsql form: apply chart overrides (production transaction pooler).
+    {{- end }}
     _cs="${ConnectionStrings__TranzrMovesDatabaseConnection}"
     _cs="$(printf '%s' "$_cs" | sed -E 's/;?[Pp]ort=[^;]*//g; s/;?[Mm]aximum [Pp]ool [Ss]ize=[^;]*//g; s/;?MaxPoolSize=[^;]*//g; s/;?[Nn]o [Rr]eset [Oo]n [Cc]lose=[^;]*//g; s/;;+/;/g; s/^;//; s/;$//')"
     {{- if $dbPort }}

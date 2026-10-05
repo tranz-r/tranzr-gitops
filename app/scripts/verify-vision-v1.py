@@ -165,6 +165,14 @@ PROD_TRANSACTION_WORKLOAD_NAME_SUBSTRS = (
     "worker-scheduler",
     "notifications",
 )
+# Emitted startup comment must stay byte-identical to develop base for non-normalizer
+# prod workloads (comment text is part of the Pod template hash).
+PROD_TRANSACTION_STARTUP_COMMENT = (
+    "# Keyword Npgsql form: apply chart overrides (production transaction pooler)."
+)
+PROD_SESSION_STARTUP_COMMENT = (
+    "# Keyword Npgsql form: apply chart overrides (session pooler)."
+)
 
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
@@ -1346,6 +1354,15 @@ def assert_production_role_aware_db_startup(
         if not matches:
             continue
         script = container_startup_script(matches[0])
+        f.check(
+            PROD_TRANSACTION_STARTUP_COMMENT in script,
+            f"production/{name_substr}: startup comment must stay base-identical "
+            f"({PROD_TRANSACTION_STARTUP_COMMENT!r})",
+        )
+        f.check(
+            PROD_SESSION_STARTUP_COMMENT not in script,
+            f"production/{name_substr}: must not emit session-pooler startup comment",
+        )
         assert_script_db_rewrite(
             f,
             f"production/{name_substr}",
@@ -1364,6 +1381,15 @@ def assert_production_role_aware_db_startup(
         return
     normalizer = normalizers[0]
     script = container_startup_script(normalizer)
+    f.check(
+        PROD_SESSION_STARTUP_COMMENT in script,
+        "production/worker-vision-normalizer: startup comment must be session-specific "
+        f"({PROD_SESSION_STARTUP_COMMENT!r})",
+    )
+    f.check(
+        PROD_TRANSACTION_STARTUP_COMMENT not in script,
+        "production/worker-vision-normalizer: must not emit transaction-pooler startup comment",
+    )
     assert_script_db_rewrite(
         f,
         "production/worker-vision-normalizer",
