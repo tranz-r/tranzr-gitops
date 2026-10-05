@@ -15,6 +15,8 @@ AsyncQueue workload must remain. Shared pin is published moves 0.122.8
 from __future__ import annotations
 
 import copy
+import hashlib
+import os
 import re
 import subprocess
 import sys
@@ -130,6 +132,40 @@ LEGACY_NORMALIZATION_POLICY_VERSION = "norm-v1-jpeg-q85-s420"
 # 0.122.5+ matches VipsVisionNormalizerOptions.ProductionNormalizationPolicyVersion.
 NATIVE_NORMALIZATION_POLICY_VERSION = "norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb"
 
+# Production root database.* keeps transaction-pooler rewrite for API/other workers.
+PROD_TRANSACTION_DB_SECRET_KEY = "tranzr-supabase-transaction-database-connection-string"
+PROD_TRANSACTION_DB_PORT = "6543"
+PROD_SESSION_DB_PORT = "5432"
+PROD_BOUNDED_POOL_SIZE = "3"
+# Synthetic non-secret Npgsql fixture (punctuation preserved; never real credentials).
+SYNTHETIC_DB_PASSWORD = r"syn!th@tic#P4ss$%^&*()_+-=[]{}|:<>?,./~"
+SYNTHETIC_TX_CONNECTION_STRING = (
+    "Host=aws-1-eu-west-2.pooler.supabase.com;Database=postgres;"
+    "Username=postgres.syntheticprojectref;"
+    f"Password={SYNTHETIC_DB_PASSWORD};SSL Mode=Require;"
+    f"Port={PROD_TRANSACTION_DB_PORT};Maximum Pool Size=99;"
+    "No Reset On Close=true"
+)
+# Synthetic chatwoot subchart auth — neutralizes bitnami rand password for digest compare.
+SYNTHETIC_HELM_SET = (
+    "chatwoot.postgresql.auth.password=synth-pg-pass",
+    "chatwoot.postgresql.auth.postgresPassword=synth-pg-pass",
+    "chatwoot.redis.auth.password=synth-redis-pass",
+)
+# Base (develop e14dd2a) default/staging digests with SYNTHETIC_HELM_SET — must stay identical.
+BASE_DEFAULT_RENDER_SHA256 = (
+    "ea57cd2203769f7a076a56d82eb70bc1149bc5c12fe8b469b8f1dd1b31ed4a50"
+)
+BASE_STAGING_RENDER_SHA256 = (
+    "f182bd6d66759fe22822b50041ffb1d09a88530d6a2a813fca636a7d568f065e"
+)
+PROD_TRANSACTION_WORKLOAD_NAME_SUBSTRS = (
+    "tranzr-service",
+    "worker-processor",
+    "worker-scheduler",
+    "notifications",
+)
+
 OPENROUTER_BOUNDS = {
     "Vision__OpenRouter__BaseUrl": "https://openrouter.ai",
     "Vision__OpenRouter__TimeoutSeconds": "45",
@@ -178,6 +214,8 @@ def helm_template(
         cmd.extend(["-f", str(vf)])
     if extra_values_file is not None:
         cmd.extend(["-f", str(extra_values_file)])
+    for item in SYNTHETIC_HELM_SET:
+        cmd.extend(["--set", item])
     if set_yaml:
         cmd.extend(["--set-json", set_yaml] if set_yaml.startswith("{") else ["--set", set_yaml])
     proc = run(cmd, check=False)
@@ -192,6 +230,8 @@ def helm_lint(values_files: list[Path]) -> None:
     cmd = ["helm", "lint", str(CHART)]
     for vf in values_files:
         cmd.extend(["-f", str(vf)])
+    for item in SYNTHETIC_HELM_SET:
+        cmd.extend(["--set", item])
     proc = run(cmd, check=False)
     if proc.returncode != 0:
         raise RuntimeError(f"helm lint failed ({' '.join(cmd)}):\n{proc.stderr or proc.stdout}")
@@ -1176,6 +1216,205 @@ def write_override(path: Path, data: dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
 
 
+def container_startup_script(doc: dict[str, Any]) -> str:
+    container = first_container(doc)
+    return "\n".join(
+        str(item) for item in ((container.get("command") or []) + (container.get("args") or []))
+    )
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def connection_string_has_keyword(cs: str, keyword: str, value: str | None = None) -> bool:
+    """Match Npgsql keyword form (;Key=Value) case-insensitively."""
+    if value is None:
+        pattern = rf"(?i)(?:^|;)\s*{re.escape(keyword)}\s*="
+    else:
+        pattern = rf"(?i)(?:^|;)\s*{re.escape(keyword)}\s*=\s*{re.escape(value)}\s*(?:;|$)"
+    return re.search(pattern, cs) is not None
+
+
+def assert_script_db_rewrite(
+    f: Failures,
+    label: str,
+    script: str,
+    *,
+    port: str,
+    pool: str,
+    no_reset: bool,
+) -> None:
+    f.check(
+        f"Port={port}" in script,
+        f"{label}: startup must set Port={port}",
+    )
+    f.check(
+        f"Maximum Pool Size={pool}" in script,
+        f"{label}: startup must set Maximum Pool Size={pool}",
+    )
+    if no_reset:
+        f.check(
+            "No Reset On Close=true" in script,
+            f"{label}: startup must set No Reset On Close=true",
+        )
+    else:
+        f.check(
+            "No Reset On Close=true" not in script
+            and "No Reset On Close=false" not in script,
+            f"{label}: startup must omit No Reset On Close (session default)",
+        )
+
+
+def execute_startup_db_rewrite(script: str, synthetic_cs: str) -> str:
+    """Run rendered startup shell with stubs; return final DB connection string.
+
+    Stubs ``exec dotnet`` and supplies synthetic messaging passwords. Never logs
+    or returns real credentials — callers must pass synthetic fixtures only.
+    """
+    if "ConnectionStrings__TranzrMovesDatabaseConnection" not in script:
+        raise RuntimeError("startup script does not rewrite the DB connection string")
+    stubbed = re.sub(
+        r"(?m)^\s*exec\s+dotnet\b.*$",
+        'printf "%s\\n" "$ConnectionStrings__TranzrMovesDatabaseConnection"',
+        script,
+    )
+    if stubbed == script:
+        raise RuntimeError("failed to stub exec dotnet in startup script")
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "ConnectionStrings__TranzrMovesDatabaseConnection": synthetic_cs,
+        "RABBITMQ_PASSWORD": "synthetic-rabbit-password",
+        "REDIS_PASSWORD": "synthetic-redis-password",
+    }
+    proc = subprocess.run(
+        ["/bin/sh", "-c", stubbed],
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "startup script execution failed "
+            f"(rc={proc.returncode}): {(proc.stderr or proc.stdout).strip()}"
+        )
+    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    if not lines:
+        raise RuntimeError("startup script produced no connection string output")
+    return lines[-1].strip()
+
+
+def assert_final_session_connection_string(
+    f: Failures, label: str, final_cs: str
+) -> None:
+    f.check(
+        SYNTHETIC_DB_PASSWORD in final_cs,
+        f"{label}: startup must preserve synthetic password bytes",
+    )
+    f.check(
+        connection_string_has_keyword(final_cs, "Port", PROD_SESSION_DB_PORT),
+        f"{label}: final connection string Port must be {PROD_SESSION_DB_PORT}",
+    )
+    f.check(
+        not connection_string_has_keyword(final_cs, "Port", PROD_TRANSACTION_DB_PORT),
+        f"{label}: final connection string must not retain Port={PROD_TRANSACTION_DB_PORT}",
+    )
+    f.check(
+        connection_string_has_keyword(
+            final_cs, "Maximum Pool Size", PROD_BOUNDED_POOL_SIZE
+        ),
+        f"{label}: final connection string Maximum Pool Size must be "
+        f"{PROD_BOUNDED_POOL_SIZE}",
+    )
+    f.check(
+        not connection_string_has_keyword(final_cs, "No Reset On Close"),
+        f"{label}: final connection string must omit No Reset On Close",
+    )
+
+
+def assert_production_role_aware_db_startup(
+    f: Failures, production_docs: list[dict[str, Any]]
+) -> None:
+    """Production: normalizer SESSION rewrite; all other app workloads stay 6543."""
+    for name_substr in PROD_TRANSACTION_WORKLOAD_NAME_SUBSTRS:
+        matches = find_docs(production_docs, "Deployment", name_substr)
+        f.check(
+            len(matches) >= 1,
+            f"production: missing Deployment containing {name_substr!r} for DB assert",
+        )
+        if not matches:
+            continue
+        script = container_startup_script(matches[0])
+        assert_script_db_rewrite(
+            f,
+            f"production/{name_substr}",
+            script,
+            port=PROD_TRANSACTION_DB_PORT,
+            pool=PROD_BOUNDED_POOL_SIZE,
+            no_reset=True,
+        )
+
+    normalizers = find_docs(production_docs, "Deployment", "worker-vision-normalizer")
+    f.check(
+        len(normalizers) == 1,
+        "production: expected VisionNormalizer for SESSION pool assert",
+    )
+    if not normalizers:
+        return
+    normalizer = normalizers[0]
+    script = container_startup_script(normalizer)
+    assert_script_db_rewrite(
+        f,
+        "production/worker-vision-normalizer",
+        script,
+        port=PROD_SESSION_DB_PORT,
+        pool=PROD_BOUNDED_POOL_SIZE,
+        no_reset=False,
+    )
+    db_secret = secret_ref_key(
+        container_env(normalizer).get("ConnectionStrings__TranzrMovesDatabaseConnection")
+    )
+    f.check(
+        db_secret == PROD_TRANSACTION_DB_SECRET_KEY,
+        "production/worker-vision-normalizer: DB secret binding must remain "
+        f"{PROD_TRANSACTION_DB_SECRET_KEY!r} (got {db_secret!r})",
+    )
+    try:
+        final_cs = execute_startup_db_rewrite(script, SYNTHETIC_TX_CONNECTION_STRING)
+    except RuntimeError as exc:
+        f.check(False, f"production/worker-vision-normalizer: startup exec failed: {exc}")
+        return
+    assert_final_session_connection_string(
+        f, "production/worker-vision-normalizer", final_cs
+    )
+
+
+def assert_default_staging_render_unchanged(
+    f: Failures, default_render: str, staging_render: str
+) -> None:
+    default_sha = sha256_text(default_render)
+    staging_sha = sha256_text(staging_render)
+    f.check(
+        default_sha == BASE_DEFAULT_RENDER_SHA256,
+        "default render digest must match develop base "
+        f"(got {default_sha}, expected {BASE_DEFAULT_RENDER_SHA256})",
+    )
+    f.check(
+        staging_sha == BASE_STAGING_RENDER_SHA256,
+        "staging render digest must match develop base "
+        f"(got {staging_sha}, expected {BASE_STAGING_RENDER_SHA256})",
+    )
+    for label, render in (("default", default_render), ("staging", staging_render)):
+        f.check(
+            "Port=6543" not in render
+            and "Port=5432" not in render
+            and "No Reset On Close" not in render
+            and "Maximum Pool Size=" not in render,
+            f"{label}: must not apply production DB port/pool/NoReset rewrite",
+        )
+
+
 def main() -> int:
     failures = Failures()
     print("== Vision V1 GitOps verifier ==")
@@ -1255,6 +1494,16 @@ def main() -> int:
     print(
         "PASS shared VisionNormalizer AsyncQueue workload, isolation, spool, probes, "
         "native policy keys, and API producer contract (default + staging + production)"
+    )
+
+    assert_default_staging_render_unchanged(failures, default_render, staging_render)
+    print("PASS default+staging effective manifests unchanged vs develop base digests")
+    assert_production_role_aware_db_startup(failures, production_docs)
+    print(
+        "PASS production role-aware DB startup "
+        f"(normalizer SESSION Port={PROD_SESSION_DB_PORT}/pool={PROD_BOUNDED_POOL_SIZE}/"
+        f"NoReset omitted; other workloads Port={PROD_TRANSACTION_DB_PORT}/NoReset; "
+        f"secret binding {PROD_TRANSACTION_DB_SECRET_KEY})"
     )
 
     for label, docs in common_labels_docs:
@@ -1797,6 +2046,54 @@ def main() -> int:
             "mutation self-test: migrator helm weight drift must fail closed",
         )
         print("PASS mutation self-test rejects migrator effective wave drift")
+
+        # Negative control: restore production normalizer transaction rewrite → fail closed.
+        tx_normalizer_override = tmp_path / "normalizer-tx-pool.yaml"
+        write_override(
+            tx_normalizer_override,
+            {
+                "deployments": {
+                    "workerVisionNormalizer": {
+                        "database": {
+                            "appConnectionPort": int(PROD_TRANSACTION_DB_PORT),
+                            "appMaximumPoolSize": int(PROD_BOUNDED_POOL_SIZE),
+                            "appNoResetOnClose": True,
+                        }
+                    }
+                }
+            },
+        )
+        try:
+            tx_norm_render = helm_template(
+                "trm-mut-norm-tx",
+                [VALUES_DEFAULT, VALUES_PRODUCTION],
+                extra_values_file=tx_normalizer_override,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        tx_norm_failures = Failures()
+        assert_production_role_aware_db_startup(
+            tx_norm_failures, load_docs(tx_norm_render)
+        )
+        session_reject = any(
+            "worker-vision-normalizer" in msg
+            and (
+                f"Port={PROD_SESSION_DB_PORT}" in msg
+                or "omit No Reset On Close" in msg
+                or f"Port must be {PROD_SESSION_DB_PORT}" in msg
+                or "must omit No Reset On Close" in msg
+            )
+            for msg in tx_norm_failures
+        )
+        failures.check(
+            session_reject,
+            "mutation self-test: production normalizer restored to "
+            f"Port={PROD_TRANSACTION_DB_PORT}/NoReset=true must fail SESSION assert",
+        )
+        print(
+            "PASS mutation self-test rejects production normalizer transaction-pool rewrite"
+        )
 
     activation_template = CHART / "templates" / "jobs" / "vision-mode-activation.yaml"
     failures.check(

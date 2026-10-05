@@ -494,6 +494,9 @@ deployments:
     name: tranzr-moves-worker-vision-normalizer
     enabled: true
     replicaCount: 1
+    # Optional per-worker Npgsql startup overrides (omit/{} inherits root database.*).
+    # Production sets SESSION-compatible Port/pool/NoReset for advisory-lock ownership.
+    database: {}
     normalization:
       # Stable asynchronous normalization (ordinary Sync wave 1 after migrators).
       intakeMode: AsyncQueue
