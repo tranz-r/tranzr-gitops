@@ -111,7 +111,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.122.7"
+  movesVersion: "0.122.8"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -485,21 +485,18 @@ deployments:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
-  # Dedicated queued image-normalization role. Shared stable AsyncQueue target for
-  # staging + production (assert-only; no Legacy→Async transition commands here).
-  # Production may still need a one-time adjacent Legacy→Paused→Async operator step
-  # before merge to main — see app/README.md Vision section.
+  # Dedicated queued image-normalization role. Shared durable AsyncQueue target for
+  # staging + production. Operational pause remains IntakePaused (not a chart Job).
+  # LegacySync persisted enum/history identity is retained but NOT a supported
+  # active intake configuration; one-shot activation Job / API transition startup
+  # fields are retired.
   workerVisionNormalizer:
     name: tranzr-moves-worker-vision-normalizer
     enabled: true
     replicaCount: 1
     normalization:
-      # Stable asynchronous normalization after verified paused/drained transition.
+      # Stable asynchronous normalization (ordinary Sync wave 1 after migrators).
       intakeMode: AsyncQueue
-      # One-shot API-owned deployment transition. Both fields stay empty in stable
-      # shared revisions (never encode illegal Legacy→Async jumps here).
-      apiTransitionFromMode: ""
-      apiTransitionOperationId: ""
       messagingEnabled: true
       apiIncludeConsumer: false
       apiConsumerReady: true
@@ -902,28 +899,6 @@ jobs:
     resources:
       requests:
         cpu: 200m
-        memory: 256Mi
-      limits:
-        cpu: 500m
-        memory: 512Mi
-
-  # VisionModeActuator Job (Helm pre-install/pre-upgrade weight 2).
-  # Argo maps to PreSync when no explicit argocd.argoproj.io/hook is in the render.
-  # Auto-renders only when workerVisionNormalizer.enabled && intakeMode=AsyncQueue.
-  # Published in images.movesVersion 0.122.7 (WorkerRole.VisionModeActuator).
-  # DeploymentIdentity = moves-<movesVersion>-<contractRevision> (no ad-hoc op IDs).
-  visionModeActivation:
-    enabled: true
-    # Stable chart configuration / activation-contract identity (ASCII token segment).
-    contractRevision: "activation-v1"
-    backoffLimit: 1
-    activeDeadlineSeconds: 180
-    restartPolicy: Never
-    activationDrainBudgetSeconds: 90
-    activationDrainPollSeconds: 2
-    resources:
-      requests:
-        cpu: 100m
         memory: 256Mi
       limits:
         cpu: 500m

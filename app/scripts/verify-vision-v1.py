@@ -6,9 +6,10 @@ pin / native AsyncQueue / five API MIME), and a temporary messaging
 rollback/dark override (no secrets / no cluster). Exit 0 only when all
 assertions pass.
 
-Also asserts the published VisionModeActuator Job contract (Helm hooks that
-Argo maps to PreSync when no explicit Argo hook appears in the render).
-Release pin 0.122.7 publishes WorkerRole.VisionModeActuator.
+Requires VisionModeActuator Job + transition startup fields to be absent.
+Ordinary schema migrator Helm→PreSync hooks and the dedicated VisionNormalizer
+AsyncQueue workload must remain. Shared pin is published moves 0.122.8
+(VisionModeActuator role retired).
 """
 
 from __future__ import annotations
@@ -44,19 +45,8 @@ def _shared_moves_version(values: dict[str, Any]) -> str:
     return version
 
 
-def _activation_contract_revision(values: dict[str, Any]) -> str:
-    jobs = values.get("jobs") or {}
-    activation = jobs.get("visionModeActivation") or {}
-    revision = str(activation.get("contractRevision") or "").strip()
-    if not revision:
-        raise RuntimeError(
-            "jobs.visionModeActivation.contractRevision missing from values.yaml"
-        )
-    return revision
-
-
-# Hard release pin — must match images.movesVersion (feeds 8 workloads + activation Job).
-SHARED_MOVES_VERSION = "0.122.7"
+# Hard release pin — must match images.movesVersion (workloads + migrators).
+SHARED_MOVES_VERSION = "0.122.8"
 
 _DEFAULT_VALUES = _load_default_values()
 _VALUES_MOVES_VERSION = _shared_moves_version(_DEFAULT_VALUES)
@@ -65,14 +55,22 @@ if _VALUES_MOVES_VERSION != SHARED_MOVES_VERSION:
         f"images.movesVersion {_VALUES_MOVES_VERSION!r} != release pin "
         f"{SHARED_MOVES_VERSION!r}"
     )
-ACTIVATION_CONTRACT_REVISION = _activation_contract_revision(_DEFAULT_VALUES)
-ACTIVATION_DEPLOYMENT_IDENTITY = (
-    f"moves-{SHARED_MOVES_VERSION}-{ACTIVATION_CONTRACT_REVISION}"
-)
+if (_DEFAULT_VALUES.get("jobs") or {}).get("visionModeActivation") is not None:
+    raise RuntimeError(
+        "jobs.visionModeActivation must be removed from values.yaml "
+        "(VisionModeActuator retired)"
+    )
 ACTIVATION_JOB_NAME_SUBSTR = "vision-mode-activation"
-ACTIVATION_DRAIN_BUDGET_SECONDS = "90"
-ACTIVATION_DRAIN_POLL_SECONDS = "2"
-ACTIVATION_SPOOL_DIRECTORY = "/tmp/tranzr-vision-mode-actuator"
+FORBIDDEN_ACTUATOR_ENV = (
+    "Vision__Normalization__TransitionFromMode",
+    "Vision__Normalization__TransitionOperationId",
+    "Vision__Normalization__DeploymentIdentity",
+    "Vision__Normalization__ActivationDrainBudgetSeconds",
+    "Vision__Normalization__ActivationDrainPollSeconds",
+)
+# History/enum vocabulary only (LegacySync unsupported as active intake;
+# IntakePaused = operational pause; AsyncQueue = current path). Not Jobs.
+DURABLE_INTAKE_MODE_NAMES = ("LegacySync", "IntakePaused", "AsyncQueue")
 
 ARGO_HOOK_ANNOTATION = "argocd.argoproj.io/hook"
 ARGO_HOOK_DELETE_POLICY = "argocd.argoproj.io/hook-delete-policy"
@@ -99,7 +97,7 @@ HELM_DELETE_TO_ARGO = {
 # Unsupported by Argo (skipped); still must not mix with explicit Argo hooks.
 HELM_HOOKS_UNSUPPORTED = frozenset({"test", "test-success", "test-failure", "crd-install"})
 
-# Expected PreSync helm weights after secrets → migrators → actuator.
+# Expected PreSync helm weights: secrets → ordinary schema migrators (no actuator).
 # Keys are logical roles resolved via kind/name/component (not raw substrings).
 EXPECTED_PRESYNC_WEIGHTS = {
     "serviceaccount": "-10",
@@ -107,7 +105,6 @@ EXPECTED_PRESYNC_WEIGHTS = {
     "application-secrets": "-8",
     "db-migration": "0",
     "notifications-db-migration": "1",
-    "activation": "2",
 }
 
 OPENROUTER_SECRET_KEY = "tranzr-openrouter-api-key"
@@ -383,7 +380,7 @@ def _presync_role(doc: dict[str, Any]) -> str | None:
 def assert_presync_weight_ordering(
     f: Failures, label: str, docs: list[dict[str, Any]]
 ) -> None:
-    """Assert Helm PreSync weights: secrets -10..-8 → migrators 0/1 → actuator 2."""
+    """Assert Helm PreSync weights: secrets -10..-8 → migrators 0/1 (no actuator)."""
     role_to_weight: dict[str, str] = {}
     for doc in docs:
         ann = doc_annotations(doc)
@@ -401,6 +398,12 @@ def assert_presync_weight_ordering(
                 f"{role_to_weight[role]!r} vs {wave!r}",
             )
         role_to_weight[role] = wave
+
+    f.check(
+        "activation" not in role_to_weight,
+        f"{label}: PreSync must not include VisionModeActuator activation role "
+        f"(got weight {role_to_weight.get('activation')!r})",
+    )
 
     for key, expected in EXPECTED_PRESYNC_WEIGHTS.items():
         got = role_to_weight.get(key)
@@ -424,17 +427,16 @@ def assert_presync_weight_ordering(
         _as_int("imagepull"),
         _as_int("application-secrets"),
     )
-    db, notif, act = (
+    db, notif = (
         _as_int("db-migration"),
         _as_int("notifications-db-migration"),
-        _as_int("activation"),
     )
-    if None not in (sa, img, app, db, notif, act):
+    if None not in (sa, img, app, db, notif):
         f.check(
-            sa < img < app < db < notif < act,  # type: ignore[operator]
+            sa < img < app < db < notif,  # type: ignore[operator]
             f"{label}: PreSync wave order must be "
             f"SA({sa}) < imagepull({img}) < secrets({app}) < "
-            f"db({db}) < notifications({notif}) < actuator({act})",
+            f"db({db}) < notifications({notif})",
         )
 
     backends = find_docs(docs, "Deployment", "tranzr-service")
@@ -472,11 +474,7 @@ def assert_no_normalization_contract(
         not normalizers,
         f"{label}: must not render a VisionNormalizer Deployment",
     )
-    activation_jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
-    f.check(
-        not activation_jobs,
-        f"{label}: must not render VisionModeActuator PreSync Job when normalizer is off",
-    )
+    assert_no_vision_mode_activation_job(f, label, docs)
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -498,213 +496,111 @@ def assert_no_vision_mode_activation_job(
     jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
     f.check(
         not jobs,
-        f"{label}: VisionModeActuator PreSync Job must be absent (got "
+        f"{label}: VisionModeActuator Job must be absent (got "
         f"{[(((j.get('metadata') or {}).get('name'))) for j in jobs]!r})",
     )
+    for doc in docs:
+        if doc.get("kind") != "Job":
+            continue
+        env = container_env(doc)
+        f.check(
+            env.get("Worker__Role") != "VisionModeActuator",
+            f"{label}: no Job may set Worker__Role=VisionModeActuator "
+            f"(job={(doc.get('metadata') or {}).get('name')!r})",
+        )
 
 
-def assert_vision_mode_activation_contract(
-    f: Failures, label: str, docs: list[dict[str, Any]], *, db_secret_key: str
+def assert_no_actuator_transition_startup_fields(
+    f: Failures, label: str, docs: list[dict[str, Any]]
 ) -> None:
-    """Shared AsyncQueue + normalizer-on → published Helm-hook activation Job.
+    """Actuator/transition startup fields must be absent on all workloads."""
+    for doc in docs:
+        kind = str(doc.get("kind") or "")
+        if kind not in ("Deployment", "Job", "CronJob"):
+            continue
+        name = str((doc.get("metadata") or {}).get("name") or "")
+        env = container_env(doc)
+        for key in FORBIDDEN_ACTUATOR_ENV:
+            f.check(
+                key not in env,
+                f"{label}: {kind}/{name} must not set retired actuator field {key}",
+            )
+        f.check(
+            env.get("Worker__Role") != "VisionModeActuator",
+            f"{label}: {kind}/{name} must not use Worker__Role=VisionModeActuator",
+        )
 
-    Effective Argo phase is PreSync via Helm→Argo mapping when no explicit
-    Argo hook exists anywhere in the render (docs/user-guide/helm.md).
+
+def assert_retired_actuator_and_ordinary_presync(
+    f: Failures, label: str, docs: list[dict[str, Any]]
+) -> None:
+    """No VisionModeActuator Job; ordinary migrators + Sync waves remain.
+
+    Effective Argo PreSync for SA/secrets/migrators uses Helm→Argo mapping when
+    no explicit Argo hook exists anywhere in the render (docs/user-guide/helm.md).
     """
     mapping_ok = assert_helm_only_hook_mapping_active(f, label, docs)
+    assert_no_vision_mode_activation_job(f, label, docs)
+    assert_no_actuator_transition_startup_fields(f, label, docs)
 
-    jobs = find_docs(docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+    # values.yaml must not retain activation-only job configuration.
+    jobs_values = (_DEFAULT_VALUES.get("jobs") or {})
     f.check(
-        len(jobs) == 1,
-        f"{label}: expected exactly one VisionModeActuator activation Job "
-        f"({ACTIVATION_JOB_NAME_SUBSTR})",
+        "visionModeActivation" not in jobs_values,
+        f"{label}: values.yaml must not define jobs.visionModeActivation",
     )
-    if not jobs:
-        return
-
-    job = jobs[0]
-    meta = job.get("metadata") or {}
-    annotations = meta.get("annotations") or {}
-    spec = job.get("spec") or {}
-    pod = pod_spec(job)
-    container = first_container(job)
-    env = container_env(job)
-
-    # Mixed shape: explicit Argo hook on the Job (or anywhere) disables Helm mapping.
-    f.check(
-        ARGO_HOOK_ANNOTATION not in annotations,
-        f"{label}: activation Job must not set {ARGO_HOOK_ANNOTATION} "
-        f"(mixed Argo+Helm hooks disable ALL Helm prereq mapping)",
-    )
-    f.check(
-        ARGO_HOOK_DELETE_POLICY not in annotations,
-        f"{label}: activation Job must not set {ARGO_HOOK_DELETE_POLICY} "
-        f"(use {HELM_HOOK_DELETE_POLICY} only)",
-    )
-    # Ordinary sync-wave on Sync workloads is OK; hook Jobs must use helm weight.
-    f.check(
-        ARGO_SYNC_WAVE not in annotations,
-        f"{label}: activation Job must not set {ARGO_SYNC_WAVE}; "
-        f"effective wave comes from {HELM_HOOK_WEIGHT}",
-    )
-
-    helm_hooks = set(_split_csv_annotation(annotations.get(HELM_HOOK_ANNOTATION)))
-    f.check(
-        helm_hooks == {"pre-install", "pre-upgrade"},
-        f"{label}: activation Job must use {HELM_HOOK_ANNOTATION}="
-        f"pre-install,pre-upgrade (same as migrator prereqs; got {helm_hooks!r})",
-    )
-    f.check(
-        annotations.get(HELM_HOOK_WEIGHT) == "2",
-        f"{label}: activation Job {HELM_HOOK_WEIGHT} must be 2 "
-        f"(after migrators 0/1, before API Sync 0; effective Argo sync-wave)",
-    )
-    helm_delete = set(_split_csv_annotation(annotations.get(HELM_HOOK_DELETE_POLICY)))
-    f.check(
-        helm_delete == {"before-hook-creation", "hook-succeeded"},
-        f"{label}: activation Job {HELM_HOOK_DELETE_POLICY} must be "
-        f"before-hook-creation,hook-succeeded (got {sorted(helm_delete)!r})",
-    )
-
-    if mapping_ok:
-        phase, wave, delete_policies = effective_argo_hook_mapping(annotations)
-        f.check(
-            phase == "PreSync",
-            f"{label}: effective Argo phase for activation Job must be PreSync "
-            f"(Helm pre-install/pre-upgrade mapping; got {phase!r})",
+    norm = (
+        ((_DEFAULT_VALUES.get("deployments") or {}).get("workerVisionNormalizer") or {}).get(
+            "normalization"
         )
+        or {}
+    )
+    for retired_key in ("apiTransitionFromMode", "apiTransitionOperationId"):
         f.check(
-            wave == "2",
-            f"{label}: effective Argo sync-wave for activation Job must be 2 "
-            f"(got {wave!r})",
-        )
-        f.check(
-            delete_policies == {"BeforeHookCreation", "HookSucceeded"},
-            f"{label}: effective Argo hook-delete-policy must map to "
-            f"BeforeHookCreation+HookSucceeded (got {sorted(delete_policies)!r})",
-        )
-        assert_presync_weight_ordering(f, label, docs)
-
-    f.check(spec.get("backoffLimit") == 1, f"{label}: activation backoffLimit must be 1")
-    f.check(
-        spec.get("activeDeadlineSeconds") == 180,
-        f"{label}: activation activeDeadlineSeconds must be 180",
-    )
-    f.check(
-        pod.get("restartPolicy") == "Never",
-        f"{label}: activation restartPolicy must be Never",
-    )
-    f.check(
-        pod.get("serviceAccountName"),
-        f"{label}: activation Job must use the chart service account",
-    )
-
-    processors = find_docs(docs, "Deployment", "worker-processor")
-    if processors:
-        f.check(
-            container_image(job) == container_image(processors[0]),
-            f"{label}: activation Job must use the pinned movesWorker image",
-        )
-    f.check(
-        container_image(job)
-        == f"ghcr.io/tranz-r/tranzr-moves-worker:{SHARED_MOVES_VERSION}",
-        f"{label}: activation Job image must be movesWorker:{SHARED_MOVES_VERSION}",
-    )
-
-    f.check(
-        env.get("Worker__Role") == "VisionModeActuator",
-        f"{label}: activation Worker__Role must be VisionModeActuator",
-    )
-    expected_norm = {
-        "Vision__Normalization__IntakeMode": "AsyncQueue",
-        "Vision__Normalization__MessagingEnabled": "true",
-        "Vision__Normalization__ConsumerReady": "true",
-        "Vision__Normalization__IncludeConsumer": "false",
-        "Vision__Normalization__DeploymentIdentity": ACTIVATION_DEPLOYMENT_IDENTITY,
-        "Vision__Normalization__ActivationDrainBudgetSeconds": ACTIVATION_DRAIN_BUDGET_SECONDS,
-        "Vision__Normalization__ActivationDrainPollSeconds": ACTIVATION_DRAIN_POLL_SECONDS,
-        "Vision__Normalization__SpoolDirectory": ACTIVATION_SPOOL_DIRECTORY,
-    }
-    for key, value in expected_norm.items():
-        f.check(env.get(key) == value, f"{label}: activation {key} == {value!r}")
-
-    f.check(
-        "Vision__Normalization__TransitionFromMode" not in env,
-        f"{label}: activation Job must not set TransitionFromMode "
-        "(identity derives edge operation IDs)",
-    )
-    f.check(
-        "Vision__Normalization__TransitionOperationId" not in env,
-        f"{label}: activation Job must not set TransitionOperationId",
-    )
-
-    # Stable API transition fields remain empty / omitted on API.
-    backend = find_docs(docs, "Deployment", "tranzr-service")
-    if backend:
-        be = container_env(backend[0])
-        f.check(
-            "Vision__Normalization__TransitionFromMode" not in be,
-            f"{label}: stable API must keep TransitionFromMode empty/absent",
-        )
-        f.check(
-            "Vision__Normalization__TransitionOperationId" not in be,
-            f"{label}: stable API must keep TransitionOperationId empty/absent",
-        )
-        f.check(
-            "Vision__Normalization__DeploymentIdentity" not in be,
-            f"{label}: API must not receive actuator DeploymentIdentity",
+            retired_key not in norm,
+            f"{label}: values normalization must not define {retired_key}",
         )
 
-    secret_env = {
-        key: secret_ref_key(value)
-        for key, value in env.items()
-        if isinstance(value, dict) and secret_ref_key(value) is not None
-    }
+    # History/enum vocabulary retained; LegacySync is not an active-intake support claim.
     f.check(
-        secret_env.get("ConnectionStrings__TranzrMovesDatabaseConnection") == db_secret_key,
-        f"{label}: activation DB secret must be environment pooler key "
-        f"{db_secret_key!r} (got {secret_env.get('ConnectionStrings__TranzrMovesDatabaseConnection')!r})",
-    )
-    f.check(
-        set(secret_env) == {"ConnectionStrings__TranzrMovesDatabaseConnection"},
-        f"{label}: activation secret scope must be DB-only (got {secret_env!r})",
-    )
-    for forbidden in (
-        "OPENROUTER_API_KEY",
-        "STRIPE_API_KEY",
-        "AZURE_STORAGE_CONNECTION_STRING",
-        "RABBITMQ_PASSWORD",
-        "REDIS_PASSWORD",
-        "COMMUNICATION_SERVICES_CONNECTION_STRING",
-    ):
-        f.check(forbidden not in env, f"{label}: activation must not receive {forbidden}")
-
-    mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
-    f.check(
-        (mounts.get("tmp") or {}).get("mountPath") == "/tmp",
-        f"{label}: activation must mount /tmp under readOnlyRootFilesystem",
-    )
-    sc = container.get("securityContext") or {}
-    f.check(
-        sc.get("readOnlyRootFilesystem") is True,
-        f"{label}: activation container readOnlyRootFilesystem must be true",
+        set(DURABLE_INTAKE_MODE_NAMES) == {"LegacySync", "IntakePaused", "AsyncQueue"},
+        f"{label}: intake mode history vocabulary must retain "
+        f"LegacySync/IntakePaused/AsyncQueue",
     )
 
-    # Ordering markers vs migrators (helm weight) and workloads (Argo waves).
     db_jobs = find_docs(docs, "Job", "db-migration")
     notif_jobs = find_docs(docs, "Job", "notifications-db-migration")
+    f.check(len(db_jobs) >= 1, f"{label}: ordinary db-migration Job must render")
+    f.check(
+        len(notif_jobs) >= 1,
+        f"{label}: ordinary notifications-db-migration Job must render",
+    )
     if db_jobs:
-        db_ann = (db_jobs[0].get("metadata") or {}).get("annotations") or {}
+        db_ann = doc_annotations(db_jobs[0])
         f.check(
-            db_ann.get("helm.sh/hook-weight") == "0",
+            db_ann.get(HELM_HOOK_WEIGHT) == "0",
             f"{label}: db-migration helm hook-weight must remain 0",
         )
-    if notif_jobs:
-        n_ann = (notif_jobs[0].get("metadata") or {}).get("annotations") or {}
         f.check(
-            n_ann.get("helm.sh/hook-weight") == "1",
+            set(_split_csv_annotation(db_ann.get(HELM_HOOK_ANNOTATION)))
+            == {"pre-install", "pre-upgrade"},
+            f"{label}: db-migration must keep Helm pre-install,pre-upgrade hooks",
+        )
+    if notif_jobs:
+        n_ann = doc_annotations(notif_jobs[0])
+        f.check(
+            n_ann.get(HELM_HOOK_WEIGHT) == "1",
             f"{label}: notifications-db-migration helm hook-weight must remain 1",
         )
+        f.check(
+            set(_split_csv_annotation(n_ann.get(HELM_HOOK_ANNOTATION)))
+            == {"pre-install", "pre-upgrade"},
+            f"{label}: notifications-db-migration must keep Helm "
+            f"pre-install,pre-upgrade hooks",
+        )
+
+    if mapping_ok:
+        assert_presync_weight_ordering(f, label, docs)
 
 
 def assert_async_normalization_contract(
@@ -1361,22 +1257,12 @@ def main() -> int:
         "native policy keys, and API producer contract (default + staging + production)"
     )
 
-    for label, docs, db_secret in (
-        ("default", default_docs, "tranzr-supabase-database-connection-string"),
-        ("staging", staging_docs, "tranzr-supabase-database-connection-string"),
-        (
-            "production",
-            production_docs,
-            "tranzr-supabase-transaction-database-connection-string",
-        ),
-    ):
-        assert_vision_mode_activation_contract(
-            failures, label, docs, db_secret_key=db_secret
-        )
+    for label, docs in common_labels_docs:
+        assert_retired_actuator_and_ordinary_presync(failures, label, docs)
     print(
-        "PASS published VisionModeActuator Helm→PreSync Job contract "
-        f"(identity={ACTIVATION_DEPLOYMENT_IDENTITY}, helm-weight/effective-wave=2, "
-        f"DB-only; no explicit Argo hooks; role published in {SHARED_MOVES_VERSION})"
+        "PASS VisionModeActuator retired (no Job / no transition startup fields); "
+        "ordinary migrators PreSync 0/1 + Sync API 0 / VisionNormalizer 1; "
+        f"durable modes {list(DURABLE_INTAKE_MODE_NAMES)}; pin {SHARED_MOVES_VERSION}"
     )
 
     assert_prod_images(failures, production_docs)
@@ -1453,11 +1339,8 @@ def main() -> int:
             "rollback: shared moves image must remain pinned",
         )
         assert_async_normalization_contract(failures, "rollback", rollback_docs)
-        assert_vision_mode_activation_contract(
-            failures,
-            "rollback",
-            rollback_docs,
-            db_secret_key="tranzr-supabase-transaction-database-connection-string",
+        assert_retired_actuator_and_ordinary_presync(
+            failures, "rollback", rollback_docs
         )
         assert_allowed_content_types_contract(
             failures, labels_docs=[("rollback", rollback_docs)]
@@ -1471,7 +1354,7 @@ def main() -> int:
             f"({SHARED_MOVES_VERSION} / native AsyncQueue / five API MIME)"
         )
         print(
-            "PASS rollback keeps published VisionModeActuator PreSync Job "
+            "PASS rollback keeps VisionModeActuator absent "
             "(messaging dark ≠ mode rewrite / no auto-downgrade)"
         )
         print(
@@ -1699,7 +1582,8 @@ def main() -> int:
         )
         print("PASS mutation self-test rejects native policy drift")
 
-        # Normalizer off → no activation Job.
+        # Normalizer off → no dedicated Deployment and no actuator Job.
+        # Fleet media NormalizationPolicyVersion env may still pin on API/workers.
         normalizer_off = tmp_path / "normalizer-off.yaml"
         write_override(
             normalizer_off,
@@ -1714,55 +1598,167 @@ def main() -> int:
         except RuntimeError as exc:
             print(exc, file=sys.stderr)
             return 1
-        assert_no_vision_mode_activation_job(
-            failures, "normalizer-off", load_docs(off_render)
+        off_docs = load_docs(off_render)
+        failures.check(
+            not find_docs(off_docs, "Deployment", "worker-vision-normalizer"),
+            "normalizer-off: must not render VisionNormalizer Deployment",
         )
-        print("PASS normalizer disabled excludes VisionModeActuator PreSync Job")
+        assert_no_vision_mode_activation_job(failures, "normalizer-off", off_docs)
+        assert_no_actuator_transition_startup_fields(
+            failures, "normalizer-off", off_docs
+        )
+        print("PASS normalizer disabled excludes VisionNormalizer + VisionModeActuator")
 
-        # LegacySync intake → no activation Job (shared Async gate).
-        legacy_intake = tmp_path / "legacy-intake.yaml"
+        # IntakePaused operational pause remains a valid intakeMode (no actuator Job).
+        paused_intake = tmp_path / "paused-intake.yaml"
         write_override(
-            legacy_intake,
+            paused_intake,
             {
                 "deployments": {
                     "workerVisionNormalizer": {
-                        "normalization": {"intakeMode": "LegacySync"},
+                        "normalization": {"intakeMode": "IntakePaused"},
                     }
                 }
             },
         )
         try:
-            legacy_render = helm_template(
-                "trm-legacy-intake",
+            paused_render = helm_template(
+                "trm-paused-intake",
                 [VALUES_DEFAULT],
-                extra_values_file=legacy_intake,
+                extra_values_file=paused_intake,
             )
         except RuntimeError as exc:
             print(exc, file=sys.stderr)
             return 1
-        assert_no_vision_mode_activation_job(
-            failures, "legacy-intake", load_docs(legacy_render)
+        paused_docs = load_docs(paused_render)
+        assert_no_vision_mode_activation_job(failures, "intake-paused", paused_docs)
+        paused_api = find_docs(paused_docs, "Deployment", "tranzr-service")
+        failures.check(len(paused_api) == 1, "intake-paused: API Deployment present")
+        if paused_api:
+            failures.check(
+                container_env(paused_api[0]).get("Vision__Normalization__IntakeMode")
+                == "IntakePaused",
+                "intake-paused: API IntakeMode must remain operational IntakePaused",
+            )
+        print(
+            "PASS IntakePaused operational pause retained without VisionModeActuator Job"
         )
-        print("PASS LegacySync intake excludes VisionModeActuator PreSync Job")
 
-        # RED mutation: mixed Argo+Helm hooks → mapping disabled / contract fails.
-        mixed_docs = copy.deepcopy(default_docs)
-        mixed_jobs = find_docs(mixed_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        # LegacySync remains a persisted enum / history identity only — not a supported
+        # active intake configuration. No positive override/render-support assertion:
+        # current path is AsyncQueue; operational pause remains IntakePaused (checked above).
+
+        # RED mutation: inject retired VisionModeActuator Job → absence contract fails.
+        injected_docs = copy.deepcopy(default_docs)
+        injected_docs.append(
+            {
+                "kind": "Job",
+                "metadata": {
+                    "name": f"trm-default-{ACTIVATION_JOB_NAME_SUBSTR}",
+                    "annotations": {
+                        HELM_HOOK_ANNOTATION: "pre-install,pre-upgrade",
+                        HELM_HOOK_WEIGHT: "2",
+                        HELM_HOOK_DELETE_POLICY: "before-hook-creation,hook-succeeded",
+                    },
+                },
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": "vision-mode-actuator",
+                                    "image": (
+                                        "ghcr.io/tranz-r/tranzr-moves-worker:"
+                                        f"{SHARED_MOVES_VERSION}"
+                                    ),
+                                    "env": [
+                                        {
+                                            "name": "Worker__Role",
+                                            "value": "VisionModeActuator",
+                                        },
+                                        {
+                                            "name": (
+                                                "Vision__Normalization__"
+                                                "DeploymentIdentity"
+                                            ),
+                                            "value": "moves-injected-activation-v1",
+                                        },
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+        inject_failures = Failures()
+        assert_retired_actuator_and_ordinary_presync(
+            inject_failures, "mutation-actuator-injected", injected_docs
+        )
+        inject_rejected = any(
+            "VisionModeActuator" in msg or ACTIVATION_JOB_NAME_SUBSTR in msg
+            for msg in inject_failures
+        )
         failures.check(
-            len(mixed_jobs) == 1,
-            "mutation self-test: default render must include activation Job fixture",
+            inject_rejected,
+            "mutation self-test: injected VisionModeActuator Job must fail closed",
+        )
+        print("PASS mutation self-test rejects injected VisionModeActuator Job")
+
+        # RED mutation: inject transition startup env on API → fail closed.
+        transition_docs = copy.deepcopy(default_docs)
+        api_docs = find_docs(transition_docs, "Deployment", "tranzr-service")
+        failures.check(
+            len(api_docs) == 1,
+            "mutation self-test: default render must include API for transition inject",
+        )
+        if api_docs:
+            containers = (
+                ((api_docs[0].get("spec") or {}).get("template") or {}).get("spec") or {}
+            ).get("containers") or []
+            if containers:
+                env_list = containers[0].setdefault("env", [])
+                env_list.append(
+                    {
+                        "name": "Vision__Normalization__TransitionFromMode",
+                        "value": "LegacySync",
+                    }
+                )
+                env_list.append(
+                    {
+                        "name": "Vision__Normalization__TransitionOperationId",
+                        "value": "op-injected",
+                    }
+                )
+        transition_failures = Failures()
+        assert_no_actuator_transition_startup_fields(
+            transition_failures, "mutation-transition-fields", transition_docs
+        )
+        transition_rejected = any(
+            "TransitionFromMode" in msg or "TransitionOperationId" in msg
+            for msg in transition_failures
+        )
+        failures.check(
+            transition_rejected,
+            "mutation self-test: injected transition startup fields must fail closed",
+        )
+        print("PASS mutation self-test rejects injected transition startup fields")
+
+        # RED mutation: mixed Argo+Helm on migrator → mapping disabled / contract fails.
+        mixed_docs = copy.deepcopy(default_docs)
+        mixed_jobs = find_docs(mixed_docs, "Job", "db-migration")
+        failures.check(
+            len(mixed_jobs) >= 1,
+            "mutation self-test: default render must include db-migration fixture",
         )
         if mixed_jobs:
             ann = (mixed_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
             ann[ARGO_HOOK_ANNOTATION] = "PreSync"
-            ann[ARGO_SYNC_WAVE] = "2"
+            ann[ARGO_SYNC_WAVE] = "0"
             ann[ARGO_HOOK_DELETE_POLICY] = "BeforeHookCreation,HookSucceeded"
         mixed_failures = Failures()
-        assert_vision_mode_activation_contract(
-            mixed_failures,
-            "mutation-mixed-hooks",
-            mixed_docs,
-            db_secret_key="tranzr-supabase-database-connection-string",
+        assert_retired_actuator_and_ordinary_presync(
+            mixed_failures, "mutation-mixed-hooks", mixed_docs
         )
         mixed_rejected = any(
             "mixed Argo+Helm" in msg
@@ -1774,74 +1770,39 @@ def main() -> int:
             mixed_rejected,
             "mutation self-test: mixed Argo+Helm hooks must fail closed",
         )
-        print("PASS mutation self-test rejects mixed Argo+Helm activation hooks")
+        print("PASS mutation self-test rejects mixed Argo+Helm migrator hooks")
 
-        # RED mutation: effective PreSync wave drift (helm weight ≠ 2) → fail closed.
+        # RED mutation: migrator helm weight drift → fail closed.
         drift_docs = copy.deepcopy(default_docs)
-        drift_jobs = find_docs(drift_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
+        drift_jobs = find_docs(drift_docs, "Job", "db-migration")
         if drift_jobs:
             ann = (drift_jobs[0].setdefault("metadata", {})).setdefault("annotations", {})
-            ann[HELM_HOOK_WEIGHT] = "0"
+            ann[HELM_HOOK_WEIGHT] = "2"
             ann.pop(ARGO_HOOK_ANNOTATION, None)
             ann.pop(ARGO_SYNC_WAVE, None)
             ann.pop(ARGO_HOOK_DELETE_POLICY, None)
         drift_failures = Failures()
-        assert_vision_mode_activation_contract(
-            drift_failures,
-            "mutation-activation-wave-drift",
-            drift_docs,
-            db_secret_key="tranzr-supabase-database-connection-string",
+        assert_retired_actuator_and_ordinary_presync(
+            drift_failures, "mutation-migrator-wave-drift", drift_docs
         )
         wave_rejected = any(
             HELM_HOOK_WEIGHT in msg
-            or "effective Argo sync-wave" in msg
             or "PreSync helm weight" in msg
             or "wave order" in msg
+            or "db-migration" in msg
             for msg in drift_failures
         )
         failures.check(
             wave_rejected,
-            "mutation self-test: activation helm weight drift must fail closed",
+            "mutation self-test: migrator helm weight drift must fail closed",
         )
-        print("PASS mutation self-test rejects activation effective wave drift")
+        print("PASS mutation self-test rejects migrator effective wave drift")
 
-        # Mutation: inject provider secret into activation env → DB-only scope fails.
-        secret_docs = copy.deepcopy(default_docs)
-        secret_jobs = find_docs(secret_docs, "Job", ACTIVATION_JOB_NAME_SUBSTR)
-        if secret_jobs:
-            containers = (
-                ((secret_jobs[0].get("spec") or {}).get("template") or {}).get("spec")
-                or {}
-            ).get("containers") or []
-            if containers:
-                env_list = containers[0].setdefault("env", [])
-                env_list.append(
-                    {
-                        "name": "OPENROUTER_API_KEY",
-                        "valueFrom": {
-                            "secretKeyRef": {
-                                "name": "tranzr-application-secrets",
-                                "key": OPENROUTER_SECRET_KEY,
-                            }
-                        },
-                    }
-                )
-        secret_mut_failures = Failures()
-        assert_vision_mode_activation_contract(
-            secret_mut_failures,
-            "mutation-activation-secrets",
-            secret_docs,
-            db_secret_key="tranzr-supabase-database-connection-string",
-        )
-        secret_rejected = any(
-            "DB-only" in msg or "must not receive OPENROUTER_API_KEY" in msg
-            for msg in secret_mut_failures
-        )
-        failures.check(
-            secret_rejected,
-            "mutation self-test: activation provider secret must fail closed",
-        )
-        print("PASS mutation self-test rejects activation Job provider secrets")
+    activation_template = CHART / "templates" / "jobs" / "vision-mode-activation.yaml"
+    failures.check(
+        not activation_template.exists(),
+        f"source must not retain retired template {activation_template}",
+    )
 
     for path in (
         VALUES_DEFAULT,
@@ -1852,7 +1813,8 @@ def main() -> int:
         CHART / "templates" / "deployments" / "worker-processor-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-scheduler-deployment.yaml",
         CHART / "templates" / "deployments" / "worker-vision-normalizer-deployment.yaml",
-        CHART / "templates" / "jobs" / "vision-mode-activation.yaml",
+        CHART / "templates" / "jobs" / "db-migration.yaml",
+        CHART / "templates" / "jobs" / "notifications-db-migration.yaml",
     ):
         if not path.exists():
             failures.check(False, f"source missing: {path}")
@@ -1862,6 +1824,19 @@ def main() -> int:
         failures.check(
             "AccountKey=" not in text,
             f"source {path.name}: must not embed Azure AccountKey literals",
+        )
+        failures.check(
+            "VisionModeActuator" not in text,
+            f"source {path.name}: must not reference VisionModeActuator",
+        )
+        failures.check(
+            "visionModeActivation" not in text,
+            f"source {path.name}: must not reference visionModeActivation",
+        )
+        failures.check(
+            "apiTransitionFromMode" not in text
+            and "apiTransitionOperationId" not in text,
+            f"source {path.name}: must not retain transition startup value keys",
         )
 
     if failures:

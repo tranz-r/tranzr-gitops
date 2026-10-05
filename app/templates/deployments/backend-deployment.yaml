@@ -83,17 +83,10 @@ spec:
             {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
             {{- if .Values.deployments.workerVisionNormalizer.enabled }}
             # Shared normalization producer contract. Intake mode controls enqueue;
-            # the API never hosts the normalization consumer.
+            # the API never hosts the normalization consumer. No transition /
+            # DeploymentIdentity startup fields (activation Job retired).
             - name: Vision__Normalization__IntakeMode
               value: {{ .Values.deployments.workerVisionNormalizer.normalization.intakeMode | quote }}
-            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionFromMode }}
-            - name: Vision__Normalization__TransitionFromMode
-              value: {{ . | quote }}
-            {{- end }}
-            {{- with .Values.deployments.workerVisionNormalizer.normalization.apiTransitionOperationId }}
-            - name: Vision__Normalization__TransitionOperationId
-              value: {{ . | quote }}
-            {{- end }}
             - name: Vision__Normalization__MessagingEnabled
               value: {{ .Values.deployments.workerVisionNormalizer.normalization.messagingEnabled | quote }}
             - name: Vision__Normalization__IncludeConsumer

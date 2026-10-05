@@ -208,12 +208,13 @@ Generate locally: `pnpm generate-vapid-keys` in `desktop-webapp/apps/driver-port
 #### Vision V1 / Photo Inventory
 
 The shared `values.yaml` baseline is the common Photo Inventory runtime for
-**default, staging, and production**: moves `0.122.7`, native normalization policy
-`norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb`, VisionNormalizer enabled with stable
-`AsyncQueue` intake (`apiConsumerReady: true`, empty transition command fields),
-API MIME allowlist JPEG/PNG/WebP/HEIC/HEIF, API + processor messaging on, processor
-`OpenRouter`, retention on; API stays `Fake`; `includeConsumer`, `hubEnabled`, and
-non-category catalogue-learning flags stay false; confirmation activation stays true.
+**default, staging, and production**: moves `0.122.8`, native normalization policy
+`norm-v3-libvips-8.18.7-jpeg-q85-s420-srgb`, VisionNormalizer enabled with durable
+`AsyncQueue` intake (`apiConsumerReady: true`; no actuator / transition startup
+fields), API MIME allowlist JPEG/PNG/WebP/HEIC/HEIF, API + processor messaging on,
+processor `OpenRouter`, retention on; API stays `Fake`; `includeConsumer`,
+`hubEnabled`, and non-category catalogue-learning flags stay false; confirmation
+activation stays true.
 
 Environment overlays override only real differences (namespace, domains, poolers,
 Turnstile, storage classes) — not a separate photo release/policy/MIME path.
@@ -224,7 +225,7 @@ silently drop the gates.
 
 | Gate / mapping | Shared baseline (`values.yaml`) |
 |---|---|
-| Image pin | `images.movesVersion: "0.122.7"` |
+| Image pin | `images.movesVersion: "0.122.8"` |
 | Native policy | `features.vision.media.normalizationPolicyVersion` (+ matching worker `policyVersion`) |
 | API MIME allowlist | `features.vision.media.allowedContentTypes` (API helper only) |
 | Async normalizer | `deployments.workerVisionNormalizer.enabled: true`, `intakeMode: AsyncQueue` |
@@ -243,49 +244,35 @@ to `false`. Shared image / native AsyncQueue / API MIME remain the common contra
 unless separately overridden. Messaging rollback does **not** rewrite durable
 normalization mode and does **not** auto-downgrade `AsyncQueue`.
 
-**Published PreSync activation Job (this chart):**
-When `workerVisionNormalizer.enabled` and `intakeMode: AsyncQueue`, the chart
-renders a fixed-name Job using the **same Helm hook annotations** as other
-prereqs (`helm.sh/hook: pre-install,pre-upgrade`, `helm.sh/hook-weight: "2"`,
-`helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`). It does
-**not** set `argocd.argoproj.io/hook` — Argo CD maps Helm hooks to PreSync /
-sync-wave / delete-policy only when **no** resource in the render carries an
-explicit Argo hook ([Argo CD Helm hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-hooks)).
-Mixing one Argo hook with Helm-only prereqs causes Argo to **ignore all** Helm
-hooks (including SA / ExternalSecrets / migrators / chatwoot).
+**VisionModeActuator retired (this chart):**
+The one-shot PreSync `VisionModeActuator` Job / `jobs.visionModeActivation`
+values and API `TransitionFromMode` / `TransitionOperationId` /
+`DeploymentIdentity` / activation-drain startup fields are **removed**.
+Ordinary schema migrators remain and cover fresh pristine bootstrap as well as
+existing `AsyncQueue` (no-op when already durable). `LegacySync` is historical
+enum / history identity only — **not** a supported active intake configuration.
+Current path is `AsyncQueue`; operators may still set `intakeMode: IntakePaused`
+for an operational pause. Pair hook removal with published moves `0.122.8` (no
+`WorkerRole.VisionModeActuator`).
+
+Prereqs still use **Helm-only** hooks (`helm.sh/hook: pre-install,pre-upgrade`)
+with no `argocd.argoproj.io/hook` in the render — Argo maps Helm hooks to PreSync
+only when **no** resource carries an explicit Argo hook
+([Argo CD Helm hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-hooks)).
 
 **Effective Argo ordering (Helm→Argo mapping, no explicit Argo hooks):**
 PreSync waves: SA `-10` → imagepull `-9` → app secrets `-8` → DB migration `0`
-→ notifications migration `1` → activation actuator `2`; then Sync: API
+→ notifications migration `1`; then Sync: API
 `argocd.argoproj.io/sync-wave: "0"` → VisionNormalizer `"1"` (ordinary sync-wave
 on Sync resources is fine; it is not a hook). Chatwoot migrate: default/staging
 Helm `post-install,post-upgrade` → PostSync; production overlay uses dual-phase
 `pre-install,post-upgrade`. Test hooks are unsupported/skipped.
 
-It runs `Worker__Role=VisionModeActuator` on the pinned `movesWorker` image
-(`0.122.7` publishes that role) with DB-only secrets (environment
-session/transaction pooler), deterministic
-`DeploymentIdentity=moves-<movesVersion>-<contractRevision>`, and empty stable
-API `TransitionFromMode` / `TransitionOperationId` fields. Already-durable
-`AsyncQueue` is a NOOP (no authority mutation on later releases).
-
-**Automated activation (replaces ad-hoc temporary API transition flags):**
-1. First-upgrade moves image + migrators so normalization durability schema
-   exists while authority remains / becomes `LegacySync` (foundation migration
-   seeds that mode). Adjacent activation is only
-   `LegacySync`→`IntakePaused`→`AsyncQueue` (never a direct Legacy→Async jump).
-2. PreSync activation Job derives edge operation IDs from
-   `DeploymentIdentity` and performs legal adjacent transitions (drain-bounded);
-   later releases NOOP when already Async. Keep stable API transition fields
-   empty — do not set temporary one-shot transition env knobs on the API.
-3. develop→main / production apply remains a separate manual promotion step
-   after the develop GitOps PR lands.
-
-Shared image pin (backend/worker/migrator/notifications/whisper + activation Job):
+Shared image pin (backend/worker/migrator/notifications/whisper):
 
 ```yaml
 images:
-  movesVersion: "0.122.7"
+  movesVersion: "0.122.8"
 ```
 
 Required Key Vault secret (processor only — never API, scheduler, gateway, frontend, or notifications):
