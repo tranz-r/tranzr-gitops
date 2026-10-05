@@ -368,7 +368,8 @@ Staging (labgrid) and production (Hetzner) use **different Azure Key Vaults** (`
 
 | Workload | Env | AKV secret | Pooler | Port |
 |---|---|---|---|---|
-| Apps (backend, workers, notifications) | **Production** | `tranzr-supabase-transaction-database-connection-string` | Transaction | **6543** (set in Helm) |
+| Apps (backend, worker-processor/scheduler, notifications) | **Production** | `tranzr-supabase-transaction-database-connection-string` | Transaction | **6543** (set in Helm) |
+| VisionNormalizer worker | **Production** | same secret key (value already SESSION host) | Session keywords | **5432** (worker override) |
 | Migrators | Production | `tranzr-supabase-database-connection-string` | Session | 5432 |
 | Apps + migrators | Staging | `tranzr-supabase-database-connection-string` | Session | 5432 |
 
@@ -393,7 +394,11 @@ Defined in `values.yaml`, overridden in `values-production.yaml`. Applied at con
 
 Staging leaves port/pool/`No Reset On Close` unset/false so the session connection string is used as-is.
 
+**VisionNormalizer exception (production only):** `deployments.workerVisionNormalizer.database` overrides the startup rewrite to `Port=5432`, `Maximum Pool Size=3`, and omits `No Reset On Close` so native owner fences can use SESSION `pg_advisory_lock`. Secret binding stays `database.appConnectionSecretKey` (no new Key Vault mapping). Other production workloads keep the root transaction settings above.
+
 Worker processor HPA on production is capped (`maxReplicas: 3`) so replica count × pool size stays within Supabase client limits.
+
+**Orphan session locks are a separate recovery problem:** deploying this override does not release advisory locks already held by idle Supavisor backends. Clear or recycle those backends independently before expecting stuck matched-media recovery to proceed.
 
 ### `No Reset On Close=true` — what / why / where
 
@@ -409,6 +414,7 @@ That crash-looped `tranzr-service` after switching apps to the transaction poole
 
 - **Enabled only in production:** `values-production.yaml` → `database.appNoResetOnClose: true`
 - **Appended at pod start** for backend, worker-processor, worker-scheduler, and notifications (same startup helper that adds `Port` / `Maximum Pool Size`)
+- **Not** applied to VisionNormalizer in production (`deployments.workerVisionNormalizer.database.appNoResetOnClose: false` — explicit `hasKey` override so Helm does not collapse false→true)
 - **Not** written into AKV; **not** used on staging; **not** applied to migrators (they stay on session pooler)
 
 **Trade-off:** do not rely on leftover session state across pooled borrows (temp tables, `SET`, session advisories, etc.). That matches transaction pooling expectations.

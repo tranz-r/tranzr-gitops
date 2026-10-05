@@ -105,6 +105,16 @@ deployments:
     e2eDataPurge:
       Enabled: false
 
+  # VisionNormalizer only: SESSION pooler keywords (advisory locks). Reuses root
+  # appConnectionSecretKey (transaction secret name whose value is already SESSION host:5432).
+  # Root database.appConnectionPort 6543 / pool 3 / NoReset true stay for API/other workers.
+  # Orphan session locks already held by idle backends are NOT cleared by this deploy.
+  workerVisionNormalizer:
+    database:
+      appConnectionPort: 5432
+      appMaximumPoolSize: 3
+      appNoResetOnClose: false
+
   gateway:
     env:
       - name: Cors__AllowedOrigins__0

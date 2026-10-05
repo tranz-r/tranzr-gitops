@@ -53,7 +53,7 @@ spec:
           {{- end }}
           image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "movesWorker") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
-          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" true) | nindent 10 }}
+          {{- include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" true "database" ($worker.database | default dict)) | nindent 10 }}
           env:
             - name: Worker__Role
               value: VisionNormalizer
