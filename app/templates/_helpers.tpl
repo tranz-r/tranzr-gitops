@@ -124,16 +124,29 @@ Usage: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
 
 {{/*
 Assemble ConnectionStrings from cluster DNS + platform passwords, optional DB port/pool, then exec dotnet.
+Optional .database map overrides root Values.database.* for one workload (hasKey so explicit
+false for appNoResetOnClose is preserved — never use default that collapses false→true).
 Usage: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Api.dll" "redis" true "rabbitmq" false) | nindent 10 }}
+Usage with override: {{ include "tranzrmoves.platformMessagingStartup" (dict "root" . "entrypoint" "TranzrMoves.Worker.dll" "redis" false "rabbitmq" true "database" $worker.database) | nindent 10 }}
 */}}
 {{- define "tranzrmoves.platformMessagingStartup" -}}
 {{- $root := .root -}}
 {{- $entrypoint := .entrypoint -}}
 {{- $redis := .redis | default false -}}
 {{- $rabbitmq := .rabbitmq | default false -}}
+{{- $dbOverride := .database | default dict -}}
 {{- $dbPort := $root.Values.database.appConnectionPort -}}
 {{- $dbPool := $root.Values.database.appMaximumPoolSize -}}
 {{- $dbNoReset := $root.Values.database.appNoResetOnClose -}}
+{{- if hasKey $dbOverride "appConnectionPort" -}}
+{{- $dbPort = index $dbOverride "appConnectionPort" -}}
+{{- end -}}
+{{- if hasKey $dbOverride "appMaximumPoolSize" -}}
+{{- $dbPool = index $dbOverride "appMaximumPoolSize" -}}
+{{- end -}}
+{{- if hasKey $dbOverride "appNoResetOnClose" -}}
+{{- $dbNoReset = index $dbOverride "appNoResetOnClose" -}}
+{{- end -}}
 {{- $augmentDb := or $dbPort $dbPool $dbNoReset -}}
 {{- if or (and $root.Values.platformMessaging.enabled (or $redis $rabbitmq)) $augmentDb }}
 command: ["/bin/sh", "-c"]
@@ -146,7 +159,11 @@ args:
     export ConnectionStrings__rabbitmq="amqp://{{ $root.Values.platformMessaging.rabbitmq.username }}:${RABBITMQ_PASSWORD}@{{ $root.Values.platformMessaging.rabbitmq.host }}:{{ $root.Values.platformMessaging.rabbitmq.port }}"
     {{- end }}
     {{- if $augmentDb }}
+    {{- if eq (int $dbPort) 5432 }}
+    # Keyword Npgsql form: apply chart overrides (session pooler).
+    {{- else }}
     # Keyword Npgsql form: apply chart overrides (production transaction pooler).
+    {{- end }}
     _cs="${ConnectionStrings__TranzrMovesDatabaseConnection}"
     _cs="$(printf '%s' "$_cs" | sed -E 's/;?[Pp]ort=[^;]*//g; s/;?[Mm]aximum [Pp]ool [Ss]ize=[^;]*//g; s/;?MaxPoolSize=[^;]*//g; s/;?[Nn]o [Rr]eset [Oo]n [Cc]lose=[^;]*//g; s/;;+/;/g; s/^;//; s/;$//')"
     {{- if $dbPort }}
