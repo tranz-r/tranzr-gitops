@@ -81,6 +81,9 @@ spec:
             # Vision V1 / Photo Inventory — keep outside backend.env so production
             # list replacement cannot drop dark gates or activation toggles.
             {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}
+            {{- if hasKey (.Values.features.vision | default dict) "video" }}
+            {{- include "tranzrmoves.visionVideoApiEnv" (dict "root" .) | nindent 12 }}
+            {{- end }}
             {{- if .Values.deployments.workerVisionNormalizer.enabled }}
             # Shared normalization producer contract. Intake mode controls enqueue;
             # the API never hosts the normalization consumer. No transition /
