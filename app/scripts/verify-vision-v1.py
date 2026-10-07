@@ -2,15 +2,17 @@
 """Repository-local Vision V1 / Photo Inventory GitOps verifier.
 
 Renders Helm manifests for default/shared, staging, production (common photo
-pin / native AsyncQueue / five API MIME), staging Vision Video gates, and
-temporary messaging / stage-video rollback overrides (no secrets / no cluster).
-Exit 0 only when all assertions pass.
+pin / native AsyncQueue / five API MIME), staging Vision Video gates, staging
+TMPDIR→spool writable-temp, and temporary messaging / stage-video rollback
+overrides (no secrets / no cluster). Exit 0 only when all assertions pass.
 
 Requires VisionModeActuator Job + transition startup fields to be absent.
 Ordinary schema migrator Helm→PreSync hooks and the dedicated VisionNormalizer
 AsyncQueue workload must remain. Shared/production pin is published moves
 0.122.8; staging overlay pins moves 0.123.0 + explicit features.vision.video
-(VisionModeActuator role retired).
++ optional deployments.workerVisionNormalizer.tmpDirectory (VisionModeActuator
+role retired). TMPDIR is not a Vision__* key and is omitted unless explicitly
+configured so shared/prod stay byte-identical.
 """
 
 from __future__ import annotations
@@ -167,17 +169,24 @@ SYNTHETIC_HELM_SET = (
     "chatwoot.redis.auth.password=synth-redis-pass",
 )
 # Base (develop e14dd2a) default digest with SYNTHETIC_HELM_SET — must stay identical.
-# Staging digest refreshed only after allowlisted 0.123.0 + Vision__Video__* delta.
+# Staging digest refreshed only after allowlisted 0.123.0 + Vision__Video__*
+# + TMPDIR→normalizerSpoolMount delta (single TMPDIR entry on normalizer).
 BASE_DEFAULT_RENDER_SHA256 = (
     "ea57cd2203769f7a076a56d82eb70bc1149bc5c12fe8b469b8f1dd1b31ed4a50"
 )
 BASE_STAGING_RENDER_SHA256 = (
-    "3d46296f639b79b2836c3ed5d08a3a3ece2dbf76122e5c40aa6eb31661a14ea3"
+    "44c0b5759fe6032eb3b8f01096d1ad67746e3df110b1470a722921d240ad9d2e"
 )
 # Historical production render digest (SYNTHETIC_HELM_SET) — preserve identity.
 HISTORICAL_PROD_RENDER_SHA256 = (
     "ac0527d30a2d60c0d1fabd2a49cf7845a9ba2862e2f925c670c29bd6a581ee66"
 )
+
+TMPDIR_ENV_KEY = "TMPDIR"
+# .NET CreateTempSubdirectory must use the existing writable spool emptyDir —
+# never /tmp (readonly root) and never a path outside the normalizer mount.
+APPROVED_NORMALIZER_TMPDIR = NORMALIZATION_SPOOL_DIRECTORY
+FORBIDDEN_READONLY_TMPDIR = "/tmp"
 
 VIDEO_ENV_PREFIX = "Vision__Video__"
 VIDEO_INTAKE_KEY = "Vision__Video__IntakeEnabled"
@@ -1158,6 +1167,129 @@ def assert_video_env_schema(
             )
 
 
+def assert_normalizer_tmpdir_contract(
+    f: Failures,
+    label: str,
+    docs: list[dict[str, Any]],
+    *,
+    expected_tmpdir: str | None,
+) -> None:
+    """TMPDIR optional; when set must equal normalizerSpoolMount under readonly root.
+
+    Not a Vision__* key. Shared/prod omit the property → no TMPDIR env.
+    Staging pins TMPDIR to the existing spool emptyDir (no /tmp mount).
+    """
+    normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
+    f.check(
+        len(normalizers) == 1,
+        f"{label}: expected exactly one VisionNormalizer for TMPDIR contract",
+    )
+    if not normalizers:
+        return
+
+    normalizer = normalizers[0]
+    container = first_container(normalizer)
+    env = container_env(normalizer)
+    env_list = container.get("env") or []
+    tmpdir_names = [
+        item.get("name")
+        for item in env_list
+        if isinstance(item, dict) and item.get("name") == TMPDIR_ENV_KEY
+    ]
+    f.check(
+        len(tmpdir_names) == len(set(tmpdir_names)),
+        f"{label}: TMPDIR env names must be unique (got {tmpdir_names!r})",
+    )
+    f.check(
+        len(tmpdir_names) <= 1,
+        f"{label}: at most one TMPDIR entry (got {len(tmpdir_names)})",
+    )
+
+    got = env.get(TMPDIR_ENV_KEY)
+    if expected_tmpdir is None:
+        f.check(
+            TMPDIR_ENV_KEY not in env,
+            f"{label}: must omit TMPDIR when tmpDirectory unset (got {got!r})",
+        )
+    else:
+        f.check(
+            isinstance(got, str) and got == expected_tmpdir,
+            f"{label}: TMPDIR must be literal {expected_tmpdir!r} (got {got!r})",
+        )
+        f.check(
+            got == APPROVED_NORMALIZER_TMPDIR,
+            f"{label}: TMPDIR must equal normalizerSpoolMount "
+            f"{APPROVED_NORMALIZER_TMPDIR!r} (got {got!r})",
+        )
+        f.check(
+            got != FORBIDDEN_READONLY_TMPDIR,
+            f"{label}: TMPDIR must not point at readonly-root {FORBIDDEN_READONLY_TMPDIR!r}",
+        )
+        f.check(
+            not str(got).startswith(VIDEO_ENV_PREFIX)
+            and not str(got).startswith("Vision__"),
+            f"{label}: TMPDIR value must not look like a Vision__* key",
+        )
+        f.check(
+            not isinstance(got, dict),
+            f"{label}: TMPDIR must not use valueFrom/secretKeyRef",
+        )
+
+    # TMPDIR is workload temp, not Vision__* — must never appear under Vision__ prefix.
+    vision_tmpdirish = [
+        key
+        for key in env
+        if str(key).startswith("Vision__") and "TMPDIR" in str(key).upper()
+    ]
+    f.check(
+        not vision_tmpdirish,
+        f"{label}: TMPDIR must not be emitted as Vision__* (got {vision_tmpdirish!r})",
+    )
+
+    sc = container.get("securityContext") or {}
+    f.check(
+        sc.get("readOnlyRootFilesystem") is True,
+        f"{label}: readOnlyRootFilesystem must remain true with optional TMPDIR",
+    )
+
+    mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
+    volumes = {v.get("name"): v for v in (pod_spec(normalizer).get("volumes") or [])}
+    spool_mount = mounts.get("vision-normalization-spool") or {}
+    spool_volume = volumes.get("vision-normalization-spool") or {}
+    f.check(
+        spool_mount.get("mountPath") == NORMALIZATION_SPOOL_DIRECTORY,
+        f"{label}: normalizerSpoolMount path preserved under TMPDIR contract",
+    )
+    f.check(
+        (spool_volume.get("emptyDir") or {}).get("sizeLimit") == "2560Mi",
+        f"{label}: normalizer spool emptyDir 2560Mi preserved under TMPDIR contract",
+    )
+    for mount in mounts.values():
+        f.check(
+            mount.get("mountPath") != FORBIDDEN_READONLY_TMPDIR,
+            f"{label}: must not mount {FORBIDDEN_READONLY_TMPDIR} "
+            "(use existing spool emptyDir instead)",
+        )
+
+
+def assert_staging_tmpdir_runtime_contract(
+    f: Failures,
+    *,
+    default_docs: list[dict[str, Any]],
+    staging_docs: list[dict[str, Any]],
+    production_docs: list[dict[str, Any]],
+) -> None:
+    """Staging pins TMPDIR→spool; shared/default/production omit (byte-identical)."""
+    for label, docs in (
+        ("default", default_docs),
+        ("production", production_docs),
+    ):
+        assert_normalizer_tmpdir_contract(f, label, docs, expected_tmpdir=None)
+    assert_normalizer_tmpdir_contract(
+        f, "staging", staging_docs, expected_tmpdir=APPROVED_NORMALIZER_TMPDIR
+    )
+
+
 def assert_staging_video_runtime_contract(
     f: Failures,
     *,
@@ -1728,6 +1860,18 @@ def main() -> int:
         "shared/prod dark; gateway 0.37.1)"
     )
 
+    assert_staging_tmpdir_runtime_contract(
+        failures,
+        default_docs=default_docs,
+        staging_docs=staging_docs,
+        production_docs=production_docs,
+    )
+    print(
+        "PASS staging VisionNormalizer TMPDIR "
+        f"(== normalizerSpoolMount {APPROVED_NORMALIZER_TMPDIR}; "
+        "shared/prod omit; readOnlyRootFilesystem true; no /tmp mount)"
+    )
+
     assert_allowed_content_types_contract(failures, labels_docs=list(common_labels_docs))
     print(
         "PASS AllowedContentTypes "
@@ -1753,7 +1897,8 @@ def main() -> int:
     )
     print(
         "PASS frozen digests "
-        "(default develop-base; staging allowlisted 0.123.0+Video; historical prod)"
+        "(default develop-base; staging allowlisted 0.123.0+Video+TMPDIR→spool; "
+        "historical prod)"
     )
     assert_production_role_aware_db_startup(failures, production_docs)
     print(
@@ -1940,6 +2085,14 @@ def main() -> int:
         assert_async_normalization_contract(
             failures, "stage-video-rollback", stage_video_rollback_docs
         )
+        # Video-off rollback is not a TMPDIR feature toggle: staging tmpDirectory
+        # may remain (non-feature behavior / documented contract).
+        assert_normalizer_tmpdir_contract(
+            failures,
+            "stage-video-rollback",
+            stage_video_rollback_docs,
+            expected_tmpdir=APPROVED_NORMALIZER_TMPDIR,
+        )
         assert_normalization_policy_identity(
             failures, labels_docs=[("stage-video-rollback", stage_video_rollback_docs)]
         )
@@ -1949,7 +2102,8 @@ def main() -> int:
         print(
             "PASS stage-video-rollback "
             "(Vision__Video__* explicit false / producer dark; "
-            f"image {STAGING_MOVES_VERSION} + native AsyncQueue/MIME intact)"
+            f"image {STAGING_MOVES_VERSION} + native AsyncQueue/MIME intact; "
+            "TMPDIR→spool may remain — non-feature / not Vision__*)"
         )
 
         # Explicit false bools must render "false" (not omit via Helm default/truthiness).
@@ -2471,6 +2625,127 @@ def main() -> int:
         )
         print(
             "PASS mutation self-test rejects production normalizer transaction-pool rewrite"
+        )
+
+        # Negative control: missing TMPDIR on staging normalizer → fail closed.
+        missing_tmpdir_docs = copy.deepcopy(staging_docs)
+        miss_norm = find_docs(missing_tmpdir_docs, "Deployment", "worker-vision-normalizer")
+        failures.check(
+            len(miss_norm) == 1,
+            "mutation self-test: staging render must include normalizer for TMPDIR strip",
+        )
+        if miss_norm:
+            containers = (
+                ((miss_norm[0].get("spec") or {}).get("template") or {}).get("spec") or {}
+            ).get("containers") or []
+            if containers:
+                containers[0]["env"] = [
+                    item
+                    for item in (containers[0].get("env") or [])
+                    if not (
+                        isinstance(item, dict) and item.get("name") == TMPDIR_ENV_KEY
+                    )
+                ]
+        miss_tmpdir_failures = Failures()
+        assert_normalizer_tmpdir_contract(
+            miss_tmpdir_failures,
+            "mutation-tmpdir-missing",
+            missing_tmpdir_docs,
+            expected_tmpdir=APPROVED_NORMALIZER_TMPDIR,
+        )
+        missing_tmpdir_rejected = any(
+            TMPDIR_ENV_KEY in msg and APPROVED_NORMALIZER_TMPDIR in msg
+            for msg in miss_tmpdir_failures
+        )
+        failures.check(
+            missing_tmpdir_rejected,
+            "mutation self-test: missing TMPDIR must be rejected by staging TMPDIR contract",
+        )
+        print("PASS mutation self-test rejects missing normalizer TMPDIR")
+
+        # Negative control: wrong TMPDIR path (not normalizerSpoolMount) → fail closed.
+        wrong_tmpdir = tmp_path / "wrong-tmpdir.yaml"
+        write_override(
+            wrong_tmpdir,
+            {
+                "deployments": {
+                    "workerVisionNormalizer": {
+                        "tmpDirectory": "/var/spool/tranzr/wrong-tmpdir",
+                    }
+                }
+            },
+        )
+        try:
+            wrong_tmpdir_render = helm_template(
+                "trm-mut-tmpdir-wrong",
+                [VALUES_DEFAULT, VALUES_STAGING],
+                extra_values_file=wrong_tmpdir,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        wrong_tmpdir_failures = Failures()
+        assert_normalizer_tmpdir_contract(
+            wrong_tmpdir_failures,
+            "mutation-tmpdir-wrong",
+            load_docs(wrong_tmpdir_render),
+            expected_tmpdir=APPROVED_NORMALIZER_TMPDIR,
+        )
+        wrong_tmpdir_rejected = any(
+            TMPDIR_ENV_KEY in msg and APPROVED_NORMALIZER_TMPDIR in msg
+            for msg in wrong_tmpdir_failures
+        )
+        failures.check(
+            wrong_tmpdir_rejected,
+            "mutation self-test: wrong TMPDIR path must be rejected "
+            f"(must equal {APPROVED_NORMALIZER_TMPDIR})",
+        )
+        print("PASS mutation self-test rejects wrong normalizer TMPDIR path")
+
+        # Negative control: TMPDIR outside writable mount (/tmp on readonly root) → fail closed.
+        outside_tmpdir = tmp_path / "outside-readonly-tmpdir.yaml"
+        write_override(
+            outside_tmpdir,
+            {
+                "deployments": {
+                    "workerVisionNormalizer": {
+                        "tmpDirectory": FORBIDDEN_READONLY_TMPDIR,
+                    }
+                }
+            },
+        )
+        try:
+            outside_tmpdir_render = helm_template(
+                "trm-mut-tmpdir-outside",
+                [VALUES_DEFAULT, VALUES_STAGING],
+                extra_values_file=outside_tmpdir,
+            )
+        except RuntimeError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        outside_tmpdir_failures = Failures()
+        assert_normalizer_tmpdir_contract(
+            outside_tmpdir_failures,
+            "mutation-tmpdir-outside-readonly",
+            load_docs(outside_tmpdir_render),
+            expected_tmpdir=APPROVED_NORMALIZER_TMPDIR,
+        )
+        outside_tmpdir_rejected = any(
+            TMPDIR_ENV_KEY in msg
+            and (
+                APPROVED_NORMALIZER_TMPDIR in msg
+                or FORBIDDEN_READONLY_TMPDIR in msg
+            )
+            for msg in outside_tmpdir_failures
+        )
+        failures.check(
+            outside_tmpdir_rejected,
+            "mutation self-test: TMPDIR=/tmp (outside writable spool / readonly root) "
+            "must be rejected",
+        )
+        print(
+            "PASS mutation self-test rejects outside-readonly TMPDIR "
+            f"({FORBIDDEN_READONLY_TMPDIR})"
         )
 
     activation_template = CHART / "templates" / "jobs" / "vision-mode-activation.yaml"
