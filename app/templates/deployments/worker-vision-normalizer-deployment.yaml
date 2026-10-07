@@ -82,6 +82,9 @@ spec:
             - name: Vision__Normalization__NormalizationPolicyVersion
               value: {{ . | quote }}
             {{- end }}
+            {{- if hasKey ($.Values.features.vision | default dict) "video" }}
+            {{- include "tranzrmoves.visionVideoNormalizerEnv" (dict "root" .) | nindent 12 }}
+            {{- end }}
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:

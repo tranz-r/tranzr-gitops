@@ -310,6 +310,45 @@ Usage: {{ include "tranzrmoves.visionSchedulerEnv" (dict "root" .) | nindent 12 
 {{- end }}
 
 {{/*
+Vision Video gates for the API. Emitted ONLY when features.vision.video is an
+explicit map (staging overlay). Shared/production omit the block → no env lines,
+including no false defaults (byte-identical renders).
+Usage: {{ include "tranzrmoves.visionVideoApiEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionVideoApiEnv" -}}
+{{- $root := .root -}}
+{{- $vision := $root.Values.features.vision | default dict -}}
+{{- if hasKey $vision "video" -}}
+{{- $v := index $vision "video" | default dict -}}
+- name: Vision__Video__IntakeEnabled
+  value: {{ $v.intakeEnabled | quote }}
+- name: Vision__Video__WorkerEnabled
+  value: {{ $v.workerEnabled | quote }}
+- name: Vision__Video__NativeCapabilityReady
+  value: {{ $v.nativeCapabilityReady | quote }}
+{{- end -}}
+{{- end }}
+
+{{/*
+Vision Video gates for VisionNormalizer. Same explicit-block gate as API.
+Intake stays false on the worker (API owns intake); Worker + Native follow values.
+Usage: {{ include "tranzrmoves.visionVideoNormalizerEnv" (dict "root" .) | nindent 12 }}
+*/}}
+{{- define "tranzrmoves.visionVideoNormalizerEnv" -}}
+{{- $root := .root -}}
+{{- $vision := $root.Values.features.vision | default dict -}}
+{{- if hasKey $vision "video" -}}
+{{- $v := index $vision "video" | default dict -}}
+- name: Vision__Video__IntakeEnabled
+  value: "false"
+- name: Vision__Video__WorkerEnabled
+  value: {{ $v.workerEnabled | quote }}
+- name: Vision__Video__NativeCapabilityReady
+  value: {{ $v.nativeCapabilityReady | quote }}
+{{- end -}}
+{{- end }}
+
+{{/*
 Vision secrets for processor: Azure Blob + OpenRouter (Key Vault refs only).
 Usage: {{ include "tranzrmoves.visionProcessorSecretEnv" (dict "root" .) | nindent 12 }}
 */}}
