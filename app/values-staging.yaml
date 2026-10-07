@@ -119,6 +119,11 @@ deployments:
   workerScheduler:
     e2eDataPurge:
       Enabled: true
+  # Staging-only: point TMPDIR at the existing writable spool emptyDir so
+  # Directory.CreateTempSubdirectory works under readOnlyRootFilesystem.
+  # Shared/production omit this key → no TMPDIR env (byte-identical).
+  workerVisionNormalizer:
+    tmpDirectory: /var/spool/tranzr/vision-normalization
   notifications:
     enabled: true
 
