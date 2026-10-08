@@ -5,20 +5,6 @@ namespaceOverride: "tranzr-moves-staging"
 # Short release name for staging to keep resource names (e.g. CronJobs) under length limits.
 fullnameOverride: "trm-stg"
 
-# Photo Inventory release / native AsyncQueue / MIME allowlist live in shared values.yaml.
-# Staging-only moves pin + Vision Video gates (shared/production stay 0.122.8 / video dark).
-# images:
-#   movesVersion: "0.123.0"
-
-features:
-  vision:
-    # Explicit block required: helpers emit Vision__Video__* only when this map is present.
-    # Shared + production omit the block → byte-identical (no false-default env).
-    video:
-      intakeEnabled: true
-      workerEnabled: true
-      nativeCapabilityReady: true
-
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
   # to the StorageClass that exists on the staging cluster (can differ from production).

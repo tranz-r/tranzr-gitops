@@ -92,6 +92,13 @@ features:
     confirmationReview:
       # API owns this gate; true is required for the mandatory customer confirmation boundary.
       activationEnabled: true
+    # Vision Video inventory — shared active baseline for staging + production.
+    # Explicit map required: helpers emit Vision__Video__* only when this block is present.
+    # API gets intake+worker+native; normalizer gets worker+native with intake forced false.
+    video:
+      intakeEnabled: true
+      workerEnabled: true
+      nativeCapabilityReady: true
 
 # Namespace override
 namespaceOverride: "tranzr-moves"

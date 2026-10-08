@@ -311,8 +311,8 @@ Usage: {{ include "tranzrmoves.visionSchedulerEnv" (dict "root" .) | nindent 12 
 
 {{/*
 Vision Video gates for the API. Emitted ONLY when features.vision.video is an
-explicit map (staging overlay). Shared/production omit the block → no env lines,
-including no false defaults (byte-identical renders).
+explicit map (shared values.yaml for staging + production). Omit the block → no
+env lines, including no false defaults (byte-identical renders).
 Usage: {{ include "tranzrmoves.visionVideoApiEnv" (dict "root" .) | nindent 12 }}
 */}}
 {{- define "tranzrmoves.visionVideoApiEnv" -}}
