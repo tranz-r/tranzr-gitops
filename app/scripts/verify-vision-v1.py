@@ -2,17 +2,18 @@
 """Repository-local Vision V1 / Photo Inventory GitOps verifier.
 
 Renders Helm manifests for default/shared, staging, production (common photo
-pin / native AsyncQueue / five API MIME), staging Vision Video gates, staging
-TMPDIR→spool writable-temp, and temporary messaging / stage-video rollback
-overrides (no secrets / no cluster). Exit 0 only when all assertions pass.
+pin / native AsyncQueue / five API MIME), shared Vision Video gates, shared
+TMPDIR→spool writable-temp on VisionNormalizer, and temporary messaging /
+stage-video rollback overrides (no secrets / no cluster). Exit 0 only when
+all assertions pass.
 
 Requires VisionModeActuator Job + transition startup fields to be absent.
 Ordinary schema migrator Helm→PreSync hooks and the dedicated VisionNormalizer
-AsyncQueue workload must remain. Shared/production pin is published moves
-0.122.8; staging overlay pins moves 0.123.0 + explicit features.vision.video
-+ optional deployments.workerVisionNormalizer.tmpDirectory (VisionModeActuator
-role retired). TMPDIR is not a Vision__* key and is omitted unless explicitly
-configured so shared/prod stay byte-identical.
+AsyncQueue workload must remain. Shared values.yaml pins moves image +
+features.vision.video + deployments.workerVisionNormalizer.tmpDirectory
+(VisionModeActuator role retired). TMPDIR is not a Vision__* key; it must
+equal the normalizer spool mount so CreateTempSubdirectory works under
+readOnlyRootFilesystem.
 """
 
 from __future__ import annotations
@@ -51,9 +52,9 @@ def _shared_moves_version(values: dict[str, Any]) -> str:
 
 
 # Hard release pin — must match images.movesVersion (workloads + migrators).
-SHARED_MOVES_VERSION = "0.122.8"
-# Staging-only overlay pin (values-staging.yaml images.movesVersion).
-STAGING_MOVES_VERSION = "0.123.0"
+# Staging + production inherit this shared pin (no overlay image override).
+SHARED_MOVES_VERSION = "0.123.4"
+STAGING_MOVES_VERSION = SHARED_MOVES_VERSION
 
 _DEFAULT_VALUES = _load_default_values()
 _VALUES_MOVES_VERSION = _shared_moves_version(_DEFAULT_VALUES)
@@ -68,10 +69,10 @@ if not isinstance(_STAGING_VALUES, dict):
 _STAGING_MOVES_VERSION = str(
     ((_STAGING_VALUES.get("images") or {}).get("movesVersion") or "")
 ).strip()
-if _STAGING_MOVES_VERSION != STAGING_MOVES_VERSION:
+if _STAGING_MOVES_VERSION:
     raise RuntimeError(
-        f"values-staging images.movesVersion {_STAGING_MOVES_VERSION!r} != "
-        f"staging pin {STAGING_MOVES_VERSION!r}"
+        "values-staging must omit images.movesVersion so staging inherits "
+        f"shared pin {SHARED_MOVES_VERSION!r} (got {_STAGING_MOVES_VERSION!r})"
     )
 if (_DEFAULT_VALUES.get("jobs") or {}).get("visionModeActivation") is not None:
     raise RuntimeError(
@@ -168,18 +169,16 @@ SYNTHETIC_HELM_SET = (
     "chatwoot.postgresql.auth.postgresPassword=synth-pg-pass",
     "chatwoot.redis.auth.password=synth-redis-pass",
 )
-# Base (develop e14dd2a) default digest with SYNTHETIC_HELM_SET — must stay identical.
-# Staging digest refreshed only after allowlisted 0.123.0 + Vision__Video__*
-# + TMPDIR→normalizerSpoolMount delta (single TMPDIR entry on normalizer).
+# Frozen digests with SYNTHETIC_HELM_SET. Refresh when shared Video + TMPDIR→spool
+# + moves pin change intentionally (single TMPDIR entry on normalizer).
 BASE_DEFAULT_RENDER_SHA256 = (
-    "ea57cd2203769f7a076a56d82eb70bc1149bc5c12fe8b469b8f1dd1b31ed4a50"
+    "8e60988267de3d9018c59da0af83a3c1dd416de6155216a5c8a30e454dea1d6c"
 )
 BASE_STAGING_RENDER_SHA256 = (
-    "44c0b5759fe6032eb3b8f01096d1ad67746e3df110b1470a722921d240ad9d2e"
+    "d933b5a758c12d2aea6f3a0b70bb708006e62bcdb83b279f680188f3dec65f70"
 )
-# Historical production render digest (SYNTHETIC_HELM_SET) — preserve identity.
 HISTORICAL_PROD_RENDER_SHA256 = (
-    "ac0527d30a2d60c0d1fabd2a49cf7845a9ba2862e2f925c670c29bd6a581ee66"
+    "ceeea64f7f7ef225948a2849969a44c0a631a523a628af952e56e5b917773dd4"
 )
 
 TMPDIR_ENV_KEY = "TMPDIR"
@@ -238,10 +237,8 @@ class Failures(list[str]):
 
 
 def moves_version_for_label(label: str) -> str:
-    """Staging (and stage-* labels) use the overlay pin; all others share 0.122.8."""
-    head = label.split("/", 1)[0]
-    if head == "staging" or head.startswith("stage"):
-        return STAGING_MOVES_VERSION
+    """All envs share images.movesVersion from values.yaml."""
+    del label  # label retained for call-site symmetry
     return SHARED_MOVES_VERSION
 
 
@@ -833,7 +830,10 @@ def assert_async_normalization_contract(
 
     resources = container.get("resources") or {}
     limits = resources.get("limits") or {}
-    f.check(limits.get("memory") == "1Gi", f"{label}: normalizer memory limit must equal 1Gi")
+    f.check(
+        limits.get("memory") == "1536Mi",
+        f"{label}: normalizer memory limit must equal 1536Mi",
+    )
 
     mounts = {m.get("name"): m for m in (container.get("volumeMounts") or [])}
     volumes = {v.get("name"): v for v in (pod.get("volumes") or [])}
@@ -1093,7 +1093,7 @@ def assert_allowed_content_types_contract(
 def assert_staging_production_vision_contract(
     f: Failures, staging_docs: list[dict[str, Any]], production_docs: list[dict[str, Any]]
 ) -> None:
-    """Photo Vision__* parity staging≡production; only approved Vision__Video__* may differ."""
+    """Vision__* parity staging≡production (photo + approved Vision__Video__* on API)."""
     for role, name_substr in (
         ("API", "tranzr-service"),
         ("processor", "worker-processor"),
@@ -1115,21 +1115,20 @@ def assert_staging_production_vision_contract(
         stg_video = video_env_from_contract(stg_contract)
         prod_video = video_env_from_contract(prod_contract)
         f.check(
-            not prod_video,
-            f"contract: production {role} must omit Vision__Video__* "
-            f"(got {prod_video!r})",
+            stg_video == prod_video,
+            f"contract: staging vs production {role} Vision__Video__* mismatch "
+            f"(staging={stg_video!r} production={prod_video!r})",
         )
         if role == "API":
             f.check(
                 set(stg_video) == APPROVED_VIDEO_ENV_KEYS,
-                f"contract: staging API Vision__Video__* keys must be exactly "
+                f"contract: API Vision__Video__* keys must be exactly "
                 f"{sorted(APPROVED_VIDEO_ENV_KEYS)!r} (got {sorted(stg_video)!r})",
             )
         else:
             f.check(
                 not stg_video,
-                f"contract: staging {role} must omit Vision__Video__* "
-                f"(got {stg_video!r})",
+                f"contract: {role} must omit Vision__Video__* (got {stg_video!r})",
             )
 
 
@@ -1174,10 +1173,10 @@ def assert_normalizer_tmpdir_contract(
     *,
     expected_tmpdir: str | None,
 ) -> None:
-    """TMPDIR optional; when set must equal normalizerSpoolMount under readonly root.
+    """TMPDIR must equal normalizerSpoolMount under readonly root when set.
 
-    Not a Vision__* key. Shared/prod omit the property → no TMPDIR env.
-    Staging pins TMPDIR to the existing spool emptyDir (no /tmp mount).
+    Not a Vision__* key. Shared baseline pins TMPDIR to the spool emptyDir
+    (no /tmp mount). expected_tmpdir=None still asserts omit for rollback tests.
     """
     normalizers = find_docs(docs, "Deployment", "worker-vision-normalizer")
     f.check(
@@ -1279,15 +1278,15 @@ def assert_staging_tmpdir_runtime_contract(
     staging_docs: list[dict[str, Any]],
     production_docs: list[dict[str, Any]],
 ) -> None:
-    """Staging pins TMPDIR→spool; shared/default/production omit (byte-identical)."""
+    """Shared baseline pins TMPDIR→spool for default/staging/production."""
     for label, docs in (
         ("default", default_docs),
+        ("staging", staging_docs),
         ("production", production_docs),
     ):
-        assert_normalizer_tmpdir_contract(f, label, docs, expected_tmpdir=None)
-    assert_normalizer_tmpdir_contract(
-        f, "staging", staging_docs, expected_tmpdir=APPROVED_NORMALIZER_TMPDIR
-    )
+        assert_normalizer_tmpdir_contract(
+            f, label, docs, expected_tmpdir=APPROVED_NORMALIZER_TMPDIR
+        )
 
 
 def assert_staging_video_runtime_contract(
@@ -1297,77 +1296,68 @@ def assert_staging_video_runtime_contract(
     staging_docs: list[dict[str, Any]],
     production_docs: list[dict[str, Any]],
 ) -> None:
-    """Staging enables Video on API + VisionNormalizer; shared/prod stay dark."""
+    """Shared baseline enables Video on API + VisionNormalizer for all envs."""
     for label, docs in (
         ("default", default_docs),
+        ("staging", staging_docs),
         ("production", production_docs),
     ):
+        api = find_docs(docs, "Deployment", "tranzr-service")
+        normalizer = find_docs(docs, "Deployment", "worker-vision-normalizer")
+        f.check(
+            len(api) == 1 and len(normalizer) == 1,
+            f"{label}: API + normalizer present for video-on check",
+        )
+        if api:
+            assert_video_env_schema(
+                f,
+                f"{label}/API",
+                container_env(api[0]),
+                expected={
+                    VIDEO_INTAKE_KEY: "true",
+                    VIDEO_WORKER_KEY: "true",
+                    VIDEO_NATIVE_KEY: "true",
+                },
+            )
+        if normalizer:
+            assert_video_env_schema(
+                f,
+                f"{label}/normalizer",
+                container_env(normalizer[0]),
+                expected={
+                    VIDEO_INTAKE_KEY: "false",
+                    VIDEO_WORKER_KEY: "true",
+                    VIDEO_NATIVE_KEY: "true",
+                },
+            )
+            f.check(
+                container_env(normalizer[0]).get("Worker__Role") == "VisionNormalizer",
+                f"{label}: Video co-hosts on VisionNormalizer (no new WorkerRole)",
+            )
+
         for role, name_substr in (
-            ("API", "tranzr-service"),
-            ("normalizer", "worker-vision-normalizer"),
             ("processor", "worker-processor"),
             ("scheduler", "worker-scheduler"),
+            ("gateway", "tranzr-gateway"),
         ):
             matches = find_docs(docs, "Deployment", name_substr)
-            f.check(len(matches) == 1, f"{label}: {role} present for video-dark check")
+            f.check(
+                len(matches) == 1,
+                f"{label}: {role} present for non-target video check",
+            )
             if not matches:
                 continue
             video = video_env_from_contract(vision_env_contract(matches[0]))
             f.check(
                 not video,
-                f"{label}: {role} must omit Vision__Video__* (got {video!r})",
+                f"{label}: non-target {role} must omit Vision__Video__* (got {video!r})",
             )
-
-    api = find_docs(staging_docs, "Deployment", "tranzr-service")
-    normalizer = find_docs(staging_docs, "Deployment", "worker-vision-normalizer")
-    f.check(len(api) == 1 and len(normalizer) == 1, "staging: API + normalizer present")
-    if api:
-        assert_video_env_schema(
-            f,
-            "staging/API",
-            container_env(api[0]),
-            expected={
-                VIDEO_INTAKE_KEY: "true",
-                VIDEO_WORKER_KEY: "true",
-                VIDEO_NATIVE_KEY: "true",
-            },
-        )
-    if normalizer:
-        assert_video_env_schema(
-            f,
-            "staging/normalizer",
-            container_env(normalizer[0]),
-            expected={
-                VIDEO_INTAKE_KEY: "false",
-                VIDEO_WORKER_KEY: "true",
-                VIDEO_NATIVE_KEY: "true",
-            },
-        )
-        f.check(
-            container_env(normalizer[0]).get("Worker__Role") == "VisionNormalizer",
-            "staging: Video co-hosts on VisionNormalizer (no new WorkerRole)",
-        )
-
-    for role, name_substr in (
-        ("processor", "worker-processor"),
-        ("scheduler", "worker-scheduler"),
-        ("gateway", "tranzr-gateway"),
-    ):
-        matches = find_docs(staging_docs, "Deployment", name_substr)
-        f.check(len(matches) == 1, f"staging: {role} present for non-target video check")
-        if not matches:
-            continue
-        video = video_env_from_contract(vision_env_contract(matches[0]))
-        f.check(
-            not video,
-            f"staging: non-target {role} must omit Vision__Video__* (got {video!r})",
-        )
-    gateway = find_docs(staging_docs, "Deployment", "tranzr-gateway")
-    if gateway:
-        f.check(
-            container_image(gateway[0]) == GATEWAY_IMAGE,
-            f"staging: gateway image must remain {GATEWAY_IMAGE}",
-        )
+        gateway = find_docs(docs, "Deployment", "tranzr-gateway")
+        if gateway:
+            f.check(
+                container_image(gateway[0]) == GATEWAY_IMAGE,
+                f"{label}: gateway image must remain {GATEWAY_IMAGE}",
+            )
 
 
 def assert_normalization_policy_identity(
@@ -1825,7 +1815,7 @@ def main() -> int:
             )
     print(
         f"PASS moves images "
-        f"(default/production={SHARED_MOVES_VERSION}; staging={STAGING_MOVES_VERSION})"
+        f"(default/staging/production={SHARED_MOVES_VERSION})"
     )
 
     # Shared baseline activates Vision in default, staging, and production.
@@ -1845,8 +1835,8 @@ def main() -> int:
 
     assert_staging_production_vision_contract(failures, staging_docs, production_docs)
     print(
-        "PASS staging/production photo Vision__* parity "
-        "(approved Vision__Video__* staging-only on API)"
+        "PASS staging/production Vision__* parity "
+        "(photo + approved Vision__Video__* on API)"
     )
     assert_staging_video_runtime_contract(
         failures,
@@ -1855,9 +1845,9 @@ def main() -> int:
         production_docs=production_docs,
     )
     print(
-        "PASS staging Vision Video runtime "
+        "PASS shared Vision Video runtime "
         "(API Intake/Worker/Native=true; normalizer Intake=false Worker/Native=true; "
-        "shared/prod dark; gateway 0.37.1)"
+        "default/staging/production; gateway 0.37.1)"
     )
 
     assert_staging_tmpdir_runtime_contract(
@@ -1867,9 +1857,9 @@ def main() -> int:
         production_docs=production_docs,
     )
     print(
-        "PASS staging VisionNormalizer TMPDIR "
+        "PASS shared VisionNormalizer TMPDIR "
         f"(== normalizerSpoolMount {APPROVED_NORMALIZER_TMPDIR}; "
-        "shared/prod omit; readOnlyRootFilesystem true; no /tmp mount)"
+        "default/staging/production; readOnlyRootFilesystem true; no /tmp mount)"
     )
 
     assert_allowed_content_types_contract(failures, labels_docs=list(common_labels_docs))
@@ -1897,8 +1887,7 @@ def main() -> int:
     )
     print(
         "PASS frozen digests "
-        "(default develop-base; staging allowlisted 0.123.0+Video+TMPDIR→spool; "
-        "historical prod)"
+        "(default/staging/production shared Video+TMPDIR→spool baseline)"
     )
     assert_production_role_aware_db_startup(failures, production_docs)
     print(
@@ -2068,8 +2057,8 @@ def main() -> int:
             )
             failures.check(
                 container_image(svr_api[0])
-                == f"ghcr.io/tranz-r/tranzr-moves-services:{STAGING_MOVES_VERSION}",
-                "stage-video-rollback: staging image pin must remain",
+                == f"ghcr.io/tranz-r/tranzr-moves-services:{SHARED_MOVES_VERSION}",
+                "stage-video-rollback: shared image pin must remain",
             )
         if svr_norm:
             assert_video_env_schema(
@@ -2102,8 +2091,8 @@ def main() -> int:
         print(
             "PASS stage-video-rollback "
             "(Vision__Video__* explicit false / producer dark; "
-            f"image {STAGING_MOVES_VERSION} + native AsyncQueue/MIME intact; "
-            "TMPDIR→spool may remain — non-feature / not Vision__*)"
+            f"image {SHARED_MOVES_VERSION} + native AsyncQueue/MIME intact; "
+            "TMPDIR→spool remains — non-feature / not Vision__*)"
         )
 
         # Explicit false bools must render "false" (not omit via Helm default/truthiness).

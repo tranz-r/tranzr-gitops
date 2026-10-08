@@ -518,6 +518,9 @@ deployments:
       spoolDirectory: /var/spool/tranzr/vision-normalization
       spoolQuotaBytes: "2147483648"
       spoolFreeSpaceHeadroomBytes: "536870912"
+    # Point TMPDIR at the writable spool emptyDir so Directory.CreateTempSubdirectory
+    # works under readOnlyRootFilesystem (video ffmpeg Uv2 scratch). Never /tmp.
+    tmpDirectory: /var/spool/tranzr/vision-normalization
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string

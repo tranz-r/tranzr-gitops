@@ -76,8 +76,8 @@ spec:
             - name: Vision__Normalization__SpoolFreeSpaceHeadroomBytes
               value: {{ $worker.normalization.spoolFreeSpaceHeadroomBytes | quote }}
             {{- with $worker.tmpDirectory }}
-            # Optional: .NET CreateTempSubdirectory → existing writable spool emptyDir
-            # (omit unless explicitly set so shared/prod stay byte-identical).
+            # .NET CreateTempSubdirectory → writable spool emptyDir (shared baseline;
+            # required for video ffmpeg under readOnlyRootFilesystem — never /tmp).
             - name: TMPDIR
               value: {{ . | quote }}
             {{- end }}
