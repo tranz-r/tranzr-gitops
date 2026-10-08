@@ -6,7 +6,18 @@ namespaceOverride: "tranzr-moves-staging"
 fullnameOverride: "trm-stg"
 
 # Photo Inventory release / native AsyncQueue / MIME allowlist live in shared values.yaml.
-# This overlay keeps only real staging differences (namespace, storage, domains, URLs).
+# Staging-only moves pin + Vision Video gates (shared/production stay 0.122.8 / video dark).
+# images:
+#   movesVersion: "0.123.0"
+
+features:
+  vision:
+    # Explicit block required: helpers emit Vision__Video__* only when this map is present.
+    # Shared + production omit the block → byte-identical (no false-default env).
+    video:
+      intakeEnabled: true
+      workerEnabled: true
+      nativeCapabilityReady: true
 
 global:
   # Staging cluster: set both global.defaultStorageClass and pgcluster.cluster.storage.storageClass
@@ -108,6 +119,11 @@ deployments:
   workerScheduler:
     e2eDataPurge:
       Enabled: true
+  # Staging-only: point TMPDIR at the existing writable spool emptyDir so
+  # Directory.CreateTempSubdirectory works under readOnlyRootFilesystem.
+  # Shared/production omit this key → no TMPDIR env (byte-identical).
+  workerVisionNormalizer:
+    tmpDirectory: /var/spool/tranzr/vision-normalization
   notifications:
     enabled: true
 

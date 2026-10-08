@@ -111,7 +111,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.122.8"
+  movesVersion: "0.123.4"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -514,14 +514,16 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
+    # Upsized so video ffmpeg (serial, 1 job/pod) and photo normalization consumers
+    # share headroom without reducing photo capacity below prior 1-CPU limit.
     resources:
       requests:
-        cpu: 250m
-        memory: 512Mi
+        cpu: 500m
+        memory: 768Mi
         ephemeral-storage: 256Mi
       limits:
-        cpu: "1"
-        memory: 1Gi
+        cpu: "2"
+        memory: 1536Mi
         ephemeral-storage: 2560Mi
     spool:
       volumeName: vision-normalization-spool

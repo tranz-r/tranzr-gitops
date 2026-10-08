@@ -75,12 +75,21 @@ spec:
               value: {{ $worker.normalization.spoolQuotaBytes | quote }}
             - name: Vision__Normalization__SpoolFreeSpaceHeadroomBytes
               value: {{ $worker.normalization.spoolFreeSpaceHeadroomBytes | quote }}
+            {{- with $worker.tmpDirectory }}
+            # Optional: .NET CreateTempSubdirectory → existing writable spool emptyDir
+            # (omit unless explicitly set so shared/prod stay byte-identical).
+            - name: TMPDIR
+              value: {{ . | quote }}
+            {{- end }}
             {{- with $worker.normalization.policyVersion }}
             # Native policy identity (must match features.vision.media.normalizationPolicyVersion).
             - name: Vision__Media__NormalizationPolicyVersion
               value: {{ . | quote }}
             - name: Vision__Normalization__NormalizationPolicyVersion
               value: {{ . | quote }}
+            {{- end }}
+            {{- if hasKey ($.Values.features.vision | default dict) "video" }}
+            {{- include "tranzrmoves.visionVideoNormalizerEnv" (dict "root" .) | nindent 12 }}
             {{- end }}
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
