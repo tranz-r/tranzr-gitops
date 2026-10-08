@@ -7,8 +7,8 @@ fullnameOverride: "trm-stg"
 
 # Photo Inventory release / native AsyncQueue / MIME allowlist live in shared values.yaml.
 # Staging-only moves pin + Vision Video gates (shared/production stay 0.122.8 / video dark).
-images:
-  movesVersion: "0.123.0"
+# images:
+#   movesVersion: "0.123.0"
 
 features:
   vision:
