@@ -68,6 +68,14 @@ spec:
             - name: QuoteReminders__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seo }}
+            - name: Seo__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoWorkflow }}
+            - name: Seo__Workflow__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
             {{- if kindIs "slice" $val }}
             {{- range $i, $item := $val }}

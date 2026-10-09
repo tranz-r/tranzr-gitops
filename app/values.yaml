@@ -444,6 +444,20 @@ deployments:
       FrontendBaseUrl: https://tranzrmoves.com
       ResumeTokenLifetimeDays: 30
       SendRemindersForBusinessQuotes: false
+    # SEO-13 stub worker — default-off until SEO-30 activation. Keys match Seo / Seo:Workflow.
+    seo:
+      Enabled: false
+      ImportEnabled: false
+      DiscoveryEnabled: false
+      GenerationEnabled: false
+    seoWorkflow:
+      ClaimLeaseSeconds: 180
+      ScanIntervalSeconds: 30
+      BatchSize: 4
+      StageTimeoutSeconds: 120
+      DailySyncUtcHour: 3
+      WeeklyPrioritisationUtcDayOfWeek: 1
+      WeeklyPrioritisationUtcHour: 4
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
       Enabled: false
