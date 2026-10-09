@@ -464,11 +464,27 @@ deployments:
       MaxAwaitingReviewDrafts: 20
       MaxConcurrentClaimedRuns: 4
       MaxRetryableAttempts: 3
-    # SEO-14 DataForSEO budget ledger — Enabled false until SEO-39 account evidence.
+    # SEO-14/40 DataForSEO — Enabled false; UseFake true until SEO-30 wires secrets.
     seoDataForSeo:
       Enabled: false
+      UseFake: true
+      BaseUrl: "https://api.dataforseo.com"
+      Login: ""
+      Password: ""
       DailyBudgetUsd: 1
       MonthlyBudgetUsd: 10
+      LocationCode: 2826
+      LanguageCode: en
+      PolicyVersion: seo.dfs.v1
+      KeywordCacheDays: 30
+      SerpCacheDays: 7
+      MaxDiscoveryTasksPerRun: 20
+      MaxRowsPerDiscoveryTask: 500
+      MaxSerpChecksPerRun: 100
+      SerpDevice: desktop
+      SerpDepth: 10
+      LabsTaskEstimateUsd: "0.072"
+      SerpCheckEstimateUsd: "0.0006"
     # SEO-15 Search Console — UseFake true until SEO-30 wires ServiceAccountJson secret.
     seoSearchConsole:
       Enabled: false
