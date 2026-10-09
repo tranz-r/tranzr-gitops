@@ -290,6 +290,13 @@ deployments:
         value: "20"
       - name: SpeechInventory__SttTimeoutSeconds
         value: "45"
+      # SEO-10 seo.biz.v1 PostHog Capture — default-off. Enable only after AKV secret exists:
+      #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-project-api-key --value 'phc_...'
+      # then add applicationSecrets + envFromSecrets Seo__PostHog__ProjectApiKey (see trusted-outcomes-seo10.md).
+      - name: Seo__PostHog__Enabled
+        value: "false"
+      - name: Seo__PostHog__Host
+        value: "https://eu.i.posthog.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
@@ -321,6 +328,9 @@ deployments:
         secretKey: tranzr-webpush-vapid-public-key
       - name: WebPush__VapidPrivateKey
         secretKey: tranzr-webpush-vapid-private-key
+      # SEO-10 — uncomment after AKV secret tranzr-seo-posthog-project-api-key exists:
+      # - name: Seo__PostHog__ProjectApiKey
+      #   secretKey: tranzr-seo-posthog-project-api-key
 
     # Resource configuration
     resources:
