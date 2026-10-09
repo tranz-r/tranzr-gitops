@@ -491,6 +491,16 @@ deployments:
       PostTypes: page,services
       PageSize: 100
       MaxPagesPerType: 50
+    # SEO-17 PostHog page aggregates — UseFake true until SEO-30 wires PersonalApiKey (not Capture key).
+    seoPostHogImport:
+      Enabled: false
+      UseFake: true
+      Host: https://eu.i.posthog.com
+      PersonalApiKey: ""
+      ProjectId: ""
+      FreshnessLagDays: 1
+      BackfillDays: 28
+      TimeZoneId: Europe/London
 
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:

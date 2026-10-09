@@ -92,6 +92,10 @@ spec:
             - name: Seo__WordPress__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoPostHogImport }}
+            - name: Seo__PostHogImport__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
             {{- if kindIs "slice" $val }}
             {{- range $i, $item := $val }}
