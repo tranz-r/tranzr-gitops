@@ -485,6 +485,20 @@ deployments:
       SerpDepth: 10
       LabsTaskEstimateUsd: "0.072"
       SerpCheckEstimateUsd: "0.0006"
+    # SEO-22 DeepSeek — Enabled false; UseFake true until SEO-30 wires ApiKey secret.
+    seoDeepSeek:
+      Enabled: false
+      UseFake: true
+      BaseUrl: "https://api.deepseek.com"
+      Model: deepseek-flash
+      ApiKey: ""
+      PromptVersion: seo.prompt.v1
+      TimeoutSeconds: 60
+      MaxRetries: 1
+      DailyTokenBudget: 0
+      DailyCostUsdEstimate: 0
+      MonthlyBudgetUsd: 0
+      RequestEstimateUsd: "0.02"
     # SEO-15 Search Console — UseFake true until SEO-30 wires ServiceAccountJson secret.
     seoSearchConsole:
       Enabled: false
