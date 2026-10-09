@@ -84,6 +84,10 @@ spec:
             - name: Seo__DataForSEO__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoSearchConsole }}
+            - name: Seo__SearchConsole__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
             {{- if kindIs "slice" $val }}
             {{- range $i, $item := $val }}

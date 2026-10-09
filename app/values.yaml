@@ -469,6 +469,19 @@ deployments:
       Enabled: false
       DailyBudgetUsd: 1
       MonthlyBudgetUsd: 10
+    # SEO-15 Search Console — UseFake true until SEO-30 wires ServiceAccountJson secret.
+    seoSearchConsole:
+      Enabled: false
+      UseFake: true
+      SiteUrl: ""
+      SearchType: web
+      TimeZoneId: Europe/London
+      FreshnessLagDays: 3
+      BackfillDays: 28
+      PageSize: 25000
+      MaxPagesPerDay: 50
+      ServiceAccountJson: ""
+
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
       Enabled: false
