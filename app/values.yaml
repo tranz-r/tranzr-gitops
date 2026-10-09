@@ -481,6 +481,16 @@ deployments:
       PageSize: 25000
       MaxPagesPerDay: 50
       ServiceAccountJson: ""
+    # SEO-16 WordPress inventory — UseFake true until SEO-30 wires ApplicationPassword secret.
+    seoWordPress:
+      Enabled: false
+      UseFake: true
+      BaseUrl: ""
+      Username: ""
+      ApplicationPassword: ""
+      PostTypes: page,services
+      PageSize: 100
+      MaxPagesPerType: 50
 
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
