@@ -458,6 +458,17 @@ deployments:
       DailySyncUtcHour: 3
       WeeklyPrioritisationUtcDayOfWeek: 1
       WeeklyPrioritisationUtcHour: 4
+    # SEO-14 ops ceilings — keep Paused false; worker still master-off via seo.Enabled.
+    seoOperations:
+      Paused: false
+      MaxAwaitingReviewDrafts: 20
+      MaxConcurrentClaimedRuns: 4
+      MaxRetryableAttempts: 3
+    # SEO-14 DataForSEO budget ledger — Enabled false until SEO-39 account evidence.
+    seoDataForSeo:
+      Enabled: false
+      DailyBudgetUsd: 1
+      MonthlyBudgetUsd: 10
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
       Enabled: false
