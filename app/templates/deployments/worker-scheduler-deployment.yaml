@@ -68,38 +68,14 @@ spec:
             - name: QuoteReminders__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seo }}
-            - name: Seo__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoWorkflow }}
-            - name: Seo__Workflow__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoOperations }}
-            - name: Seo__Operations__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoDataForSeo }}
-            - name: Seo__DataForSEO__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoDeepSeek }}
-            - name: Seo__DeepSeek__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoSearchConsole }}
-            - name: Seo__SearchConsole__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoWordPress }}
-            - name: Seo__WordPress__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
-            {{- range $key, $val := .Values.deployments.workerScheduler.seoPostHogImport }}
-            - name: Seo__PostHogImport__{{ $key }}
-              value: {{ $val | quote }}
-            {{- end }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__" "map" .Values.deployments.workerScheduler.seo) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__Workflow__" "map" .Values.deployments.workerScheduler.seoWorkflow) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__Operations__" "map" .Values.deployments.workerScheduler.seoOperations) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__DataForSEO__" "map" .Values.deployments.workerScheduler.seoDataForSeo) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__DeepSeek__" "map" .Values.deployments.workerScheduler.seoDeepSeek) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__SearchConsole__" "map" .Values.deployments.workerScheduler.seoSearchConsole) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__WordPress__" "map" .Values.deployments.workerScheduler.seoWordPress) | nindent 12 }}
+            {{- include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__PostHogImport__" "map" .Values.deployments.workerScheduler.seoPostHogImport) | nindent 12 }}
             {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
             {{- if kindIs "slice" $val }}
             {{- range $i, $item := $val }}
