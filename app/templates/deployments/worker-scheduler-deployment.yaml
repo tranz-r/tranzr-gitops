@@ -68,6 +68,38 @@ spec:
             - name: QuoteReminders__{{ $key }}
               value: {{ $val | quote }}
             {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seo }}
+            - name: Seo__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoWorkflow }}
+            - name: Seo__Workflow__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoOperations }}
+            - name: Seo__Operations__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoDataForSeo }}
+            - name: Seo__DataForSEO__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoDeepSeek }}
+            - name: Seo__DeepSeek__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoSearchConsole }}
+            - name: Seo__SearchConsole__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoWordPress }}
+            - name: Seo__WordPress__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            {{- range $key, $val := .Values.deployments.workerScheduler.seoPostHogImport }}
+            - name: Seo__PostHogImport__{{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
             {{- range $key, $val := .Values.deployments.workerScheduler.e2eDataPurge }}
             {{- if kindIs "slice" $val }}
             {{- range $i, $item := $val }}
@@ -89,6 +121,13 @@ spec:
                 secretKeyRef:
                   name: {{ $.Values.externalSecrets.name }}
                   key: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
+            {{- end }}
+            {{- range (.Values.deployments.workerScheduler.additionalEnvFromSecrets | default list) }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: {{ .secretKey }}
             {{- end }}
           {{- with .Values.deployments.workerScheduler.resources }}
           resources:

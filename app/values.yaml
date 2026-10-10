@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.123.4"
+  movesVersion: "0.124.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -290,6 +290,13 @@ deployments:
         value: "20"
       - name: SpeechInventory__SttTimeoutSeconds
         value: "45"
+      # SEO-10 seo.biz.v1 PostHog Capture — default-off. Enable only after AKV secret exists:
+      #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-project-api-key --value 'phc_...'
+      # then add applicationSecrets + envFromSecrets Seo__PostHog__ProjectApiKey (see trusted-outcomes-seo10.md).
+      - name: Seo__PostHog__Enabled
+        value: "false"
+      - name: Seo__PostHog__Host
+        value: "https://eu.i.posthog.com"
 
     # Environment variables from External Secrets
     envFromSecrets:
@@ -321,6 +328,12 @@ deployments:
         secretKey: tranzr-webpush-vapid-public-key
       - name: WebPush__VapidPrivateKey
         secretKey: tranzr-webpush-vapid-private-key
+      # SEO-10 — prod wires via values-production additionalEnvFromSecrets after AKV exists.
+      # - name: Seo__PostHog__ProjectApiKey
+      #   secretKey: tranzr-seo-posthog-project-api-key
+
+    # Prod-only secret env (appended; does not replace envFromSecrets). See values-production.yaml.
+    additionalEnvFromSecrets: []
 
     # Resource configuration
     resources:
@@ -434,6 +447,94 @@ deployments:
       FrontendBaseUrl: https://tranzrmoves.com
       ResumeTokenLifetimeDays: 30
       SendRemindersForBusinessQuotes: false
+    # SEO worker — default-off (SEO-30). Fake Gate D / live keys: deployment-runbooks-seo30.md.
+    seo:
+      Enabled: false
+      ImportEnabled: false
+      DiscoveryEnabled: false
+      GenerationEnabled: false
+    seoWorkflow:
+      ClaimLeaseSeconds: 180
+      ScanIntervalSeconds: 30
+      BatchSize: 4
+      StageTimeoutSeconds: 120
+      DailySyncUtcHour: 3
+      WeeklyPrioritisationUtcDayOfWeek: 1
+      WeeklyPrioritisationUtcHour: 4
+    # SEO-14 ops ceilings — keep Paused false; worker still master-off via seo.Enabled.
+    seoOperations:
+      Paused: false
+      MaxAwaitingReviewDrafts: 20
+      MaxConcurrentClaimedRuns: 4
+      MaxRetryableAttempts: 3
+    # SEO-14/40 DataForSEO — Enabled false; UseFake true until SEO-30 wires secrets.
+    seoDataForSeo:
+      Enabled: false
+      UseFake: true
+      BaseUrl: "https://api.dataforseo.com"
+      Login: ""
+      Password: ""
+      DailyBudgetUsd: 1
+      MonthlyBudgetUsd: 10
+      LocationCode: 2826
+      LanguageCode: en
+      PolicyVersion: seo.dfs.v1
+      KeywordCacheDays: 30
+      SerpCacheDays: 7
+      MaxDiscoveryTasksPerRun: 20
+      MaxRowsPerDiscoveryTask: 500
+      MaxSerpChecksPerRun: 100
+      SerpDevice: desktop
+      SerpDepth: 10
+      LabsTaskEstimateUsd: "0.072"
+      SerpCheckEstimateUsd: "0.0006"
+    # SEO-22 DeepSeek — Enabled false; UseFake true until SEO-30 wires ApiKey secret.
+    seoDeepSeek:
+      Enabled: false
+      UseFake: true
+      BaseUrl: "https://api.deepseek.com"
+      Model: deepseek-flash
+      ApiKey: ""
+      PromptVersion: seo.prompt.v1
+      TimeoutSeconds: 60
+      MaxRetries: 1
+      DailyTokenBudget: 0
+      DailyCostUsdEstimate: 0
+      MonthlyBudgetUsd: 0
+      RequestEstimateUsd: "0.02"
+    # SEO-15 Search Console — UseFake true until SEO-30 wires ServiceAccountJson secret.
+    seoSearchConsole:
+      Enabled: false
+      UseFake: true
+      SiteUrl: ""
+      SearchType: web
+      TimeZoneId: Europe/London
+      FreshnessLagDays: 3
+      BackfillDays: 28
+      PageSize: 25000
+      MaxPagesPerDay: 50
+      ServiceAccountJson: ""
+    # SEO-16 WordPress inventory — UseFake true until SEO-30 wires ApplicationPassword secret.
+    seoWordPress:
+      Enabled: false
+      UseFake: true
+      BaseUrl: ""
+      Username: ""
+      ApplicationPassword: ""
+      PostTypes: page,services
+      PageSize: 100
+      MaxPagesPerType: 50
+    # SEO-17 PostHog page aggregates — UseFake true until SEO-30 wires PersonalApiKey (not Capture key).
+    seoPostHogImport:
+      Enabled: false
+      UseFake: true
+      Host: https://eu.i.posthog.com
+      PersonalApiKey: ""
+      ProjectId: ""
+      FreshnessLagDays: 1
+      BackfillDays: 28
+      TimeZoneId: Europe/London
+
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
       Enabled: false
@@ -448,6 +549,23 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
+      # SEO-30 — prod wires via values-production additionalEnvFromSecrets after AKV exists.
+      # Keep UseFake=true until live activation; shared base stays commented so staging vault
+      # is not required to hold live SEO keys.
+      # - name: Seo__DataForSEO__Login
+      #   secretKey: tranzr-seo-dataforseo-login
+      # - name: Seo__DataForSEO__Password
+      #   secretKey: tranzr-seo-dataforseo-password
+      # - name: Seo__DeepSeek__ApiKey
+      #   secretKey: tranzr-seo-deepseek-api-key
+      # - name: Seo__SearchConsole__ServiceAccountJson
+      #   secretKey: tranzr-seo-gsc-service-account-json
+      # - name: Seo__WordPress__ApplicationPassword
+      #   secretKey: tranzr-seo-wordpress-app-password
+      # - name: Seo__PostHogImport__PersonalApiKey
+      #   secretKey: tranzr-seo-posthog-personal-api-key
+    # Prod-only secret env (appended; does not replace envFromSecrets). See values-production.yaml.
+    additionalEnvFromSecrets: []
     resources:
       requests:
         cpu: 100m
@@ -809,6 +927,44 @@ externalSecrets:
       description: "Web Push VAPID private key (Drivers Portal) — sensitive"
       remoteRef:
         key: tranzr-webpush-vapid-private-key
+
+    # SEO-30 — do not add to applicationSecrets until AKV keys exist (External Secrets fails closed).
+    # Create then uncomment + wire workerScheduler/API envFromSecrets (deployment-runbooks-seo30.md):
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-dataforseo-login --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-dataforseo-password --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-deepseek-api-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-gsc-service-account-json --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-wordpress-app-password --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-personal-api-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-project-api-key --value 'phc_...'
+    # - secretKey: tranzr-seo-dataforseo-login
+    #   description: "DataForSEO API login (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-dataforseo-login
+    # - secretKey: tranzr-seo-dataforseo-password
+    #   description: "DataForSEO API password (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-dataforseo-password
+    # - secretKey: tranzr-seo-deepseek-api-key
+    #   description: "DeepSeek API key (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-deepseek-api-key
+    # - secretKey: tranzr-seo-gsc-service-account-json
+    #   description: "Google Search Console service account JSON (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-gsc-service-account-json
+    # - secretKey: tranzr-seo-wordpress-app-password
+    #   description: "WordPress Application Password (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-wordpress-app-password
+    # - secretKey: tranzr-seo-posthog-personal-api-key
+    #   description: "PostHog Personal API key for Query aggregates (SEO worker Scheduler; not Capture)"
+    #   remoteRef:
+    #     key: tranzr-seo-posthog-personal-api-key
+    # - secretKey: tranzr-seo-posthog-project-api-key
+    #   description: "PostHog project API key for seo.biz.v1 Capture (API host)"
+    #   remoteRef:
+    #     key: tranzr-seo-posthog-project-api-key
 
     # Database secrets (session pooler — migrators; staging apps)
     - secretKey: tranzr-supabase-database-connection-string

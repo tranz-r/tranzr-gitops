@@ -110,6 +110,13 @@ spec:
                   name: {{ $.Values.externalSecrets.name }}
                   key: {{ include "tranzrmoves.appDatabaseSecretKey" (dict "root" $ "item" .) }}
             {{- end }}
+            {{- range (.Values.deployments.backend.additionalEnvFromSecrets | default list) }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.externalSecrets.name }}
+                  key: {{ .secretKey }}
+            {{- end }}
           {{- end }}
           {{- with .Values.deployments.backend.livenessProbe }}
           livenessProbe:
