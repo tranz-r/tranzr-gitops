@@ -17,6 +17,8 @@ externalSecrets:
       description: "Supabase transaction pooler connection string (apps)"
       remoteRef:
         key: tranzr-supabase-transaction-database-connection-string
+    # SEO-30 — add tranzr-seo-* AKV keys + deployments.*.additionalEnvFromSecrets
+    # only after secrets exist in the production vault (not in this staging PR).
 
 global:
   # Production cluster StorageClass (must exist on the prod cluster)
@@ -85,6 +87,11 @@ deployments:
         value: "20"
       - name: SpeechInventory__SttTimeoutSeconds
         value: "45"
+      # SEO-10 Capture — keep disabled; wire ProjectApiKey via additionalEnvFromSecrets after AKV.
+      - name: Seo__PostHog__Enabled
+        value: "false"
+      - name: Seo__PostHog__Host
+        value: "https://eu.i.posthog.com"
 
   whisperStt:
     replicaCount: 2
@@ -104,6 +111,17 @@ deployments:
       FrontendBaseUrl: https://tranzzer.com
     e2eDataPurge:
       Enabled: false
+    # SEO stays dark in production until staging Fake Gate D + live pilot are signed off.
+    # Base values.yaml already has Enabled: false / UseFake: true; explicit here for clarity.
+    seo:
+      Enabled: false
+      ImportEnabled: false
+      DiscoveryEnabled: false
+      GenerationEnabled: false
+    # Non-secret PostHog Query target (EU project). Wire PersonalApiKey after AKV exists.
+    seoPostHogImport:
+      ProjectId: "279484"
+      Host: https://eu.i.posthog.com
 
   # VisionNormalizer only: SESSION pooler keywords (advisory locks). Reuses root
   # appConnectionSecretKey (transaction secret name whose value is already SESSION host:5432).

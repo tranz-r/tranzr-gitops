@@ -105,14 +105,31 @@ deployments:
   workerScheduler:
     e2eDataPurge:
       Enabled: true
-    # SEO-30 / SEO-29 Fake Gate D bootstrap (keep commented placeholders until authorised):
-    # After SEO migrations apply, temporarily set under workerScheduler.seo:
-    #   Enabled: true
-    #   ImportEnabled: true
-    #   DiscoveryEnabled: true
-    #   GenerationEnabled: true
-    # Leave all seo* UseFake: true and do not uncomment AKV envFromSecrets until live keys exist.
-    # Full checklist: tranzr-moves-services/documents/seo/deployment-runbooks-seo30.md
+    # SEO-29 Fake Gate D — master + stages on; providers Enabled + UseFake (no AKV yet).
+    # Apply SEO EF migrations before/with the SEO image deploy. Live SEO AKV keys
+    # are production-only (values-production additionalApplicationSecrets); staging
+    # stays Fake — do not require staging vault SEO secrets.
+    # Checklist: tranzr-moves-services/documents/seo/deployment-runbooks-seo30.md
+    seo:
+      Enabled: true
+      ImportEnabled: true
+      DiscoveryEnabled: true
+      GenerationEnabled: true
+    seoDataForSeo:
+      Enabled: true
+      UseFake: true
+    seoDeepSeek:
+      Enabled: true
+      UseFake: true
+    seoSearchConsole:
+      Enabled: true
+      UseFake: true
+    seoWordPress:
+      Enabled: true
+      UseFake: true
+    seoPostHogImport:
+      Enabled: true
+      UseFake: true
   notifications:
     enabled: true
 

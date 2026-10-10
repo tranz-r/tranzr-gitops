@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""SEO-30: fail-closed checks that Helm emits default-off Seo__* on workerScheduler
-and does not wire live SEO secret env refs until uncommented in values.
+"""SEO-30: fail-closed checks for SEO Helm wiring.
+
+- Base values.yaml: master off, UseFake true, no live secret env refs.
+- Base + staging: Fake Gate D may enable master/stages/providers while UseFake
+  stays true and secrets stay unwired.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CHART = ROOT
 VALUES = ROOT / "values.yaml"
 VALUES_STAGING = ROOT / "values-staging.yaml"
+VALUES_PRODUCTION = ROOT / "values-production.yaml"
 
 REQUIRED_PLAIN = [
     "Seo__Enabled",
@@ -40,6 +44,14 @@ FORBIDDEN_SECRET_ENV = [
     "Seo__SearchConsole__ServiceAccountJson",
     "Seo__WordPress__ApplicationPassword",
     "Seo__PostHogImport__PersonalApiKey",
+]
+
+USE_FAKE_KEYS = [
+    "Seo__DataForSEO__UseFake",
+    "Seo__DeepSeek__UseFake",
+    "Seo__WordPress__UseFake",
+    "Seo__SearchConsole__UseFake",
+    "Seo__PostHogImport__UseFake",
 ]
 
 
@@ -78,7 +90,6 @@ def extract_scheduler_env(rendered: str) -> dict[str, str]:
         return {}
 
     env: dict[str, str] = {}
-    # Match plain value env entries in the scheduler pod template.
     for m in re.finditer(
         r"- name: (Seo__[A-Za-z0-9_]+)\n\s+value: \"([^\"]*)\"",
         block,
@@ -92,43 +103,79 @@ def extract_scheduler_env(rendered: str) -> dict[str, str]:
     return env
 
 
+def assert_no_live_secrets(f: Failures, env: dict[str, str], label: str) -> None:
+    for key in FORBIDDEN_SECRET_ENV:
+        val = env.get(key)
+        f.check(
+            val in (None, ""),
+            f"{label}: {key} must stay empty/unwired until AKV secret exists (got {val!r})",
+        )
+
+
+def assert_use_fake(f: Failures, env: dict[str, str], label: str) -> None:
+    for key in USE_FAKE_KEYS:
+        f.check(env.get(key) == "true", f"{label}: {key} must be true")
+
+
+def assert_required_plain(f: Failures, env: dict[str, str], label: str) -> None:
+    f.check(bool(env), f"{label}: worker-scheduler Deployment Seo__* env not found")
+    for key in REQUIRED_PLAIN:
+        f.check(key in env, f"{label}: scheduler missing plain env {key}")
+
+
 def main() -> int:
     f = Failures()
     print("== SEO V1 GitOps verifier (SEO-30) ==")
-    lint = run(["helm", "lint", str(CHART), "-f", str(VALUES), "-f", str(VALUES_STAGING)])
+
+    lint = run(
+        ["helm", "lint", str(CHART), "-f", str(VALUES), "-f", str(VALUES_STAGING)]
+    )
     f.check(lint.returncode == 0, f"helm lint failed:\n{lint.stdout}\n{lint.stderr}")
 
     try:
-        rendered = helm_template([VALUES, VALUES_STAGING])
+        base = extract_scheduler_env(helm_template([VALUES]))
+        staging = extract_scheduler_env(helm_template([VALUES, VALUES_STAGING]))
+        production = extract_scheduler_env(helm_template([VALUES, VALUES_PRODUCTION]))
     except RuntimeError as ex:
         print("FAIL:", ex)
         return 1
 
-    env = extract_scheduler_env(rendered)
-    f.check(bool(env), "worker-scheduler Deployment Seo__* env not found in template")
+    assert_required_plain(f, base, "base")
+    assert_use_fake(f, base, "base")
+    assert_no_live_secrets(f, base, "base")
+    f.check(base.get("Seo__Enabled") == "false", "base: Seo__Enabled must be false")
+    f.check(base.get("Seo__DataForSEO__Enabled") == "false", "base: DataForSEO Enabled must be false")
 
-    for key in REQUIRED_PLAIN:
-        f.check(key in env, f"scheduler missing plain env {key}")
-    f.check(env.get("Seo__Enabled") == "false", "Seo__Enabled must be false in base+staging")
-    f.check(env.get("Seo__DataForSEO__UseFake") == "true", "DataForSEO UseFake must be true by default")
-    f.check(env.get("Seo__DeepSeek__UseFake") == "true", "DeepSeek UseFake must be true by default")
-    f.check(env.get("Seo__WordPress__UseFake") == "true", "WordPress UseFake must be true by default")
-    f.check(env.get("Seo__SearchConsole__UseFake") == "true", "GSC UseFake must be true by default")
-    f.check(env.get("Seo__PostHogImport__UseFake") == "true", "PostHogImport UseFake must be true by default")
+    assert_required_plain(f, staging, "staging")
+    assert_use_fake(f, staging, "staging")
+    assert_no_live_secrets(f, staging, "staging")
+    # Fake Gate D: master on, providers Enabled, still Fake, no AKV.
+    f.check(staging.get("Seo__Enabled") == "true", "staging Fake Gate D: Seo__Enabled must be true")
+    f.check(staging.get("Seo__ImportEnabled") == "true", "staging: Seo__ImportEnabled must be true")
+    f.check(staging.get("Seo__DiscoveryEnabled") == "true", "staging: Seo__DiscoveryEnabled must be true")
+    f.check(staging.get("Seo__GenerationEnabled") == "true", "staging: Seo__GenerationEnabled must be true")
+    for key in (
+        "Seo__DataForSEO__Enabled",
+        "Seo__DeepSeek__Enabled",
+        "Seo__SearchConsole__Enabled",
+        "Seo__WordPress__Enabled",
+        "Seo__PostHogImport__Enabled",
+    ):
+        f.check(staging.get(key) == "true", f"staging Fake Gate D: {key} must be true")
 
-    for key in FORBIDDEN_SECRET_ENV:
-        val = env.get(key)
-        # Plain empty placeholders from values.yaml are OK; secret refs / non-empty = live wire.
-        f.check(
-            val in (None, ""),
-            f"{key} must stay empty/unwired until AKV secret exists (got {val!r})",
-        )
+    assert_required_plain(f, production, "production")
+    assert_use_fake(f, production, "production")
+    assert_no_live_secrets(f, production, "production")
+    f.check(production.get("Seo__Enabled") == "false", "production: Seo__Enabled must stay false")
 
     if f.errors:
         for err in f.errors:
             print("FAIL:", err)
         return 1
-    print("OK: SEO Helm defaults are fail-closed (Enabled=false, UseFake=true, no live secret refs)")
+    print(
+        "OK: base dark; staging Fake Gate D (Enabled=true, UseFake=true, no secrets); "
+        "production dark"
+    )
     return 0
 
 

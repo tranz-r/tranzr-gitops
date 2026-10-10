@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.123.4"
+  movesVersion: "0.124.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -328,9 +328,12 @@ deployments:
         secretKey: tranzr-webpush-vapid-public-key
       - name: WebPush__VapidPrivateKey
         secretKey: tranzr-webpush-vapid-private-key
-      # SEO-10 — uncomment after AKV secret tranzr-seo-posthog-project-api-key exists:
+      # SEO-10 — prod wires via values-production additionalEnvFromSecrets after AKV exists.
       # - name: Seo__PostHog__ProjectApiKey
       #   secretKey: tranzr-seo-posthog-project-api-key
+
+    # Prod-only secret env (appended; does not replace envFromSecrets). See values-production.yaml.
+    additionalEnvFromSecrets: []
 
     # Resource configuration
     resources:
@@ -546,8 +549,9 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
-      # SEO-30 — uncomment each row only after the matching AKV secret exists
-      # (see documents/seo/deployment-runbooks-seo30.md). Keep UseFake=true until live activation.
+      # SEO-30 — prod wires via values-production additionalEnvFromSecrets after AKV exists.
+      # Keep UseFake=true until live activation; shared base stays commented so staging vault
+      # is not required to hold live SEO keys.
       # - name: Seo__DataForSEO__Login
       #   secretKey: tranzr-seo-dataforseo-login
       # - name: Seo__DataForSEO__Password
@@ -560,6 +564,8 @@ deployments:
       #   secretKey: tranzr-seo-wordpress-app-password
       # - name: Seo__PostHogImport__PersonalApiKey
       #   secretKey: tranzr-seo-posthog-personal-api-key
+    # Prod-only secret env (appended; does not replace envFromSecrets). See values-production.yaml.
+    additionalEnvFromSecrets: []
     resources:
       requests:
         cpu: 100m
