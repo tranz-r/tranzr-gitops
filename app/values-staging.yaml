@@ -105,6 +105,14 @@ deployments:
   workerScheduler:
     e2eDataPurge:
       Enabled: true
+    # SEO-30 / SEO-29 Fake Gate D bootstrap (keep commented placeholders until authorised):
+    # After SEO migrations apply, temporarily set under workerScheduler.seo:
+    #   Enabled: true
+    #   ImportEnabled: true
+    #   DiscoveryEnabled: true
+    #   GenerationEnabled: true
+    # Leave all seo* UseFake: true and do not uncomment AKV envFromSecrets until live keys exist.
+    # Full checklist: tranzr-moves-services/documents/seo/deployment-runbooks-seo30.md
   notifications:
     enabled: true
 

@@ -444,7 +444,7 @@ deployments:
       FrontendBaseUrl: https://tranzrmoves.com
       ResumeTokenLifetimeDays: 30
       SendRemindersForBusinessQuotes: false
-    # SEO-13 stub worker — default-off until SEO-30 activation. Keys match Seo / Seo:Workflow.
+    # SEO worker — default-off (SEO-30). Fake Gate D / live keys: deployment-runbooks-seo30.md.
     seo:
       Enabled: false
       ImportEnabled: false
@@ -546,6 +546,20 @@ deployments:
     envFromSecrets:
       - name: ConnectionStrings__TranzrMovesDatabaseConnection
         secretKey: tranzr-supabase-database-connection-string
+      # SEO-30 — uncomment each row only after the matching AKV secret exists
+      # (see documents/seo/deployment-runbooks-seo30.md). Keep UseFake=true until live activation.
+      # - name: Seo__DataForSEO__Login
+      #   secretKey: tranzr-seo-dataforseo-login
+      # - name: Seo__DataForSEO__Password
+      #   secretKey: tranzr-seo-dataforseo-password
+      # - name: Seo__DeepSeek__ApiKey
+      #   secretKey: tranzr-seo-deepseek-api-key
+      # - name: Seo__SearchConsole__ServiceAccountJson
+      #   secretKey: tranzr-seo-gsc-service-account-json
+      # - name: Seo__WordPress__ApplicationPassword
+      #   secretKey: tranzr-seo-wordpress-app-password
+      # - name: Seo__PostHogImport__PersonalApiKey
+      #   secretKey: tranzr-seo-posthog-personal-api-key
     resources:
       requests:
         cpu: 100m
@@ -907,6 +921,44 @@ externalSecrets:
       description: "Web Push VAPID private key (Drivers Portal) — sensitive"
       remoteRef:
         key: tranzr-webpush-vapid-private-key
+
+    # SEO-30 — do not add to applicationSecrets until AKV keys exist (External Secrets fails closed).
+    # Create then uncomment + wire workerScheduler/API envFromSecrets (deployment-runbooks-seo30.md):
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-dataforseo-login --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-dataforseo-password --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-deepseek-api-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-gsc-service-account-json --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-wordpress-app-password --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-personal-api-key --value '...'
+    #   az keyvault secret set --vault-name <vault> --name tranzr-seo-posthog-project-api-key --value 'phc_...'
+    # - secretKey: tranzr-seo-dataforseo-login
+    #   description: "DataForSEO API login (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-dataforseo-login
+    # - secretKey: tranzr-seo-dataforseo-password
+    #   description: "DataForSEO API password (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-dataforseo-password
+    # - secretKey: tranzr-seo-deepseek-api-key
+    #   description: "DeepSeek API key (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-deepseek-api-key
+    # - secretKey: tranzr-seo-gsc-service-account-json
+    #   description: "Google Search Console service account JSON (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-gsc-service-account-json
+    # - secretKey: tranzr-seo-wordpress-app-password
+    #   description: "WordPress Application Password (SEO worker Scheduler)"
+    #   remoteRef:
+    #     key: tranzr-seo-wordpress-app-password
+    # - secretKey: tranzr-seo-posthog-personal-api-key
+    #   description: "PostHog Personal API key for Query aggregates (SEO worker Scheduler; not Capture)"
+    #   remoteRef:
+    #     key: tranzr-seo-posthog-personal-api-key
+    # - secretKey: tranzr-seo-posthog-project-api-key
+    #   description: "PostHog project API key for seo.biz.v1 Capture (API host)"
+    #   remoteRef:
+    #     key: tranzr-seo-posthog-project-api-key
 
     # Database secrets (session pooler — migrators; staging apps)
     - secretKey: tranzr-supabase-database-connection-string
