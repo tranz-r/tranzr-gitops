@@ -4,7 +4,8 @@
 - Base values.yaml: master off, UseFake true, no live secret env refs.
 - Base + staging: Fake Gate D may enable master/stages/providers while UseFake
   stays true and secrets stay unwired.
-- Production: master off + UseFake true, but SEO AKV secret refs must be wired.
+- Production: live master + providers (UseFake false) with SEO AKV secret refs
+  and non-secret SiteUrl / WordPress BaseUrl+Username set.
 """
 
 from __future__ import annotations
@@ -54,6 +55,14 @@ USE_FAKE_KEYS = [
     "Seo__SearchConsole__UseFake",
     "Seo__PostHogImport__UseFake",
 ]
+
+PROVIDER_ENABLED_KEYS = (
+    "Seo__DataForSEO__Enabled",
+    "Seo__DeepSeek__Enabled",
+    "Seo__SearchConsole__Enabled",
+    "Seo__WordPress__Enabled",
+    "Seo__PostHogImport__Enabled",
+)
 
 
 class Failures:
@@ -113,9 +122,9 @@ def assert_no_live_secrets(f: Failures, env: dict[str, str], label: str) -> None
         )
 
 
-def assert_use_fake(f: Failures, env: dict[str, str], label: str) -> None:
+def assert_use_fake(f: Failures, env: dict[str, str], label: str, *, expected: str = "true") -> None:
     for key in USE_FAKE_KEYS:
-        f.check(env.get(key) == "true", f"{label}: {key} must be true")
+        f.check(env.get(key) == expected, f"{label}: {key} must be {expected}")
 
 
 def assert_required_plain(f: Failures, env: dict[str, str], label: str) -> None:
@@ -155,19 +164,33 @@ def main() -> int:
     f.check(staging.get("Seo__ImportEnabled") == "true", "staging: Seo__ImportEnabled must be true")
     f.check(staging.get("Seo__DiscoveryEnabled") == "true", "staging: Seo__DiscoveryEnabled must be true")
     f.check(staging.get("Seo__GenerationEnabled") == "true", "staging: Seo__GenerationEnabled must be true")
-    for key in (
-        "Seo__DataForSEO__Enabled",
-        "Seo__DeepSeek__Enabled",
-        "Seo__SearchConsole__Enabled",
-        "Seo__WordPress__Enabled",
-        "Seo__PostHogImport__Enabled",
-    ):
+    for key in PROVIDER_ENABLED_KEYS:
         f.check(staging.get(key) == "true", f"staging Fake Gate D: {key} must be true")
 
     assert_required_plain(f, production, "production")
-    assert_use_fake(f, production, "production")
-    # Production may wire AKV secret refs while master stays off / UseFake true.
-    f.check(production.get("Seo__Enabled") == "false", "production: Seo__Enabled must stay false")
+    assert_use_fake(f, production, "production", expected="false")
+    f.check(production.get("Seo__Enabled") == "true", "production live: Seo__Enabled must be true")
+    f.check(production.get("Seo__ImportEnabled") == "true", "production live: Seo__ImportEnabled must be true")
+    f.check(production.get("Seo__DiscoveryEnabled") == "true", "production live: Seo__DiscoveryEnabled must be true")
+    f.check(production.get("Seo__GenerationEnabled") == "true", "production live: Seo__GenerationEnabled must be true")
+    for key in PROVIDER_ENABLED_KEYS:
+        f.check(production.get(key) == "true", f"production live: {key} must be true")
+    f.check(
+        production.get("Seo__SearchConsole__SiteUrl") == "sc-domain:tranzzer.com",
+        "production live: Seo__SearchConsole__SiteUrl must be sc-domain:tranzzer.com",
+    )
+    f.check(
+        production.get("Seo__WordPress__BaseUrl") == "https://tranzzer.com",
+        "production live: Seo__WordPress__BaseUrl must be https://tranzzer.com",
+    )
+    f.check(
+        bool(production.get("Seo__WordPress__Username")),
+        "production live: Seo__WordPress__Username must be set",
+    )
+    f.check(
+        production.get("Seo__PostHogImport__ProjectId") == "279484",
+        "production live: Seo__PostHogImport__ProjectId must be set",
+    )
     for key in FORBIDDEN_SECRET_ENV:
         f.check(
             production.get(key) == "__secret_ref__",
@@ -180,7 +203,7 @@ def main() -> int:
         return 1
     print(
         "OK: base dark; staging Fake Gate D (Enabled=true, UseFake=true, no secrets); "
-        "production dark master + AKV secret refs wired"
+        "production live (Enabled=true, UseFake=false, AKV secret refs + SiteUrl/WP BaseUrl)"
     )
     return 0
 
