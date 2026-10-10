@@ -4,6 +4,7 @@
 - Base values.yaml: master off, UseFake true, no live secret env refs.
 - Base + staging: Fake Gate D may enable master/stages/providers while UseFake
   stays true and secrets stay unwired.
+- Production: master off + UseFake true, but SEO AKV secret refs must be wired.
 """
 
 from __future__ import annotations
@@ -165,8 +166,13 @@ def main() -> int:
 
     assert_required_plain(f, production, "production")
     assert_use_fake(f, production, "production")
-    assert_no_live_secrets(f, production, "production")
+    # Production may wire AKV secret refs while master stays off / UseFake true.
     f.check(production.get("Seo__Enabled") == "false", "production: Seo__Enabled must stay false")
+    for key in FORBIDDEN_SECRET_ENV:
+        f.check(
+            production.get(key) == "__secret_ref__",
+            f"production: {key} must be wired from AKV (got {production.get(key)!r})",
+        )
 
     if f.errors:
         for err in f.errors:
@@ -174,7 +180,7 @@ def main() -> int:
         return 1
     print(
         "OK: base dark; staging Fake Gate D (Enabled=true, UseFake=true, no secrets); "
-        "production dark"
+        "production dark master + AKV secret refs wired"
     )
     return 0
 

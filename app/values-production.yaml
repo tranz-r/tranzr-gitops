@@ -17,8 +17,35 @@ externalSecrets:
       description: "Supabase transaction pooler connection string (apps)"
       remoteRef:
         key: tranzr-supabase-transaction-database-connection-string
-    # SEO-30 — add tranzr-seo-* AKV keys + deployments.*.additionalEnvFromSecrets
-    # only after secrets exist in the production vault (not in this staging PR).
+    # SEO-30 — production vault (tranzr-moves); staging Fake Gate D does not use these.
+    - secretKey: tranzr-seo-dataforseo-login
+      description: "DataForSEO API login (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-dataforseo-login
+    - secretKey: tranzr-seo-dataforseo-password
+      description: "DataForSEO API password (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-dataforseo-password
+    - secretKey: tranzr-seo-deepseek-api-key
+      description: "DeepSeek API key (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-deepseek-api-key
+    - secretKey: tranzr-seo-gsc-service-account-json
+      description: "Google Search Console service account JSON (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-gsc-service-account-json
+    - secretKey: tranzr-seo-wordpress-app-password
+      description: "WordPress Application Password (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-wordpress-app-password
+    - secretKey: tranzr-seo-posthog-personal-api-key
+      description: "PostHog Personal API key for Query aggregates (SEO worker Scheduler)"
+      remoteRef:
+        key: tranzr-seo-posthog-personal-api-key
+    - secretKey: tranzr-seo-posthog-project-api-key
+      description: "PostHog project API key for seo.biz.v1 Capture (API host)"
+      remoteRef:
+        key: tranzr-seo-posthog-project-api-key
 
 global:
   # Production cluster StorageClass (must exist on the prod cluster)
@@ -87,11 +114,14 @@ deployments:
         value: "20"
       - name: SpeechInventory__SttTimeoutSeconds
         value: "45"
-      # SEO-10 Capture — keep disabled; wire ProjectApiKey via additionalEnvFromSecrets after AKV.
+      # SEO-10 Capture — AKV project key wired; emits seo.biz.v1 after booking/payment/refund.
       - name: Seo__PostHog__Enabled
-        value: "false"
+        value: "true"
       - name: Seo__PostHog__Host
         value: "https://eu.i.posthog.com"
+    additionalEnvFromSecrets:
+      - name: Seo__PostHog__ProjectApiKey
+        secretKey: tranzr-seo-posthog-project-api-key
 
   whisperStt:
     replicaCount: 2
@@ -111,17 +141,29 @@ deployments:
       FrontendBaseUrl: https://tranzzer.com
     e2eDataPurge:
       Enabled: false
-    # SEO stays dark in production until staging Fake Gate D + live pilot are signed off.
+    # SEO automation stays dark until Fake Gate D soak + live pilot; keys pre-wired from AKV.
     # Base values.yaml already has Enabled: false / UseFake: true; explicit here for clarity.
     seo:
       Enabled: false
       ImportEnabled: false
       DiscoveryEnabled: false
       GenerationEnabled: false
-    # Non-secret PostHog Query target (EU project). Wire PersonalApiKey after AKV exists.
     seoPostHogImport:
       ProjectId: "279484"
       Host: https://eu.i.posthog.com
+    additionalEnvFromSecrets:
+      - name: Seo__DataForSEO__Login
+        secretKey: tranzr-seo-dataforseo-login
+      - name: Seo__DataForSEO__Password
+        secretKey: tranzr-seo-dataforseo-password
+      - name: Seo__DeepSeek__ApiKey
+        secretKey: tranzr-seo-deepseek-api-key
+      - name: Seo__SearchConsole__ServiceAccountJson
+        secretKey: tranzr-seo-gsc-service-account-json
+      - name: Seo__WordPress__ApplicationPassword
+        secretKey: tranzr-seo-wordpress-app-password
+      - name: Seo__PostHogImport__PersonalApiKey
+        secretKey: tranzr-seo-posthog-personal-api-key
 
   # VisionNormalizer only: SESSION pooler keywords (advisory locks). Reuses root
   # appConnectionSecretKey (transaction secret name whose value is already SESSION host:5432).
