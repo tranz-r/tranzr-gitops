@@ -141,14 +141,31 @@ deployments:
       FrontendBaseUrl: https://tranzzer.com
     e2eDataPurge:
       Enabled: false
-    # SEO automation stays dark until Fake Gate D soak + live pilot; keys pre-wired from AKV.
-    # Base values.yaml already has Enabled: false / UseFake: true; explicit here for clarity.
+    # SEO live — authorised production activation (SEO-31). AKV secrets pre-wired.
+    # DataForSEO budgets stay US$1/day / US$10/month (base values). Pause via seoOperations.Paused.
     seo:
-      Enabled: false
-      ImportEnabled: false
-      DiscoveryEnabled: false
-      GenerationEnabled: false
+      Enabled: true
+      ImportEnabled: true
+      DiscoveryEnabled: true
+      GenerationEnabled: true
+    seoDataForSeo:
+      Enabled: true
+      UseFake: false
+    seoDeepSeek:
+      Enabled: true
+      UseFake: false
+    seoSearchConsole:
+      Enabled: true
+      UseFake: false
+      SiteUrl: "sc-domain:tranzzer.com"
+    seoWordPress:
+      Enabled: true
+      UseFake: false
+      BaseUrl: "https://tranzzer.com"
+      Username: "mcvavy@gmail.com"
     seoPostHogImport:
+      Enabled: true
+      UseFake: false
       ProjectId: "279484"
       Host: https://eu.i.posthog.com
     additionalEnvFromSecrets:
