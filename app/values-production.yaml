@@ -151,6 +151,15 @@ deployments:
     seoDataForSeo:
       Enabled: true
       UseFake: false
+      # Phase A — Google Ads click winners as Labs seeds (no code deploy).
+      # Format: Vertical|keyword. Strip "near me" / brand / competitor terms.
+      Seeds:
+        - "Removals|home removal service"
+        - "Removals|residential moving companies"
+        - "Removals|furniture removal"
+        - "Removals|packing service"
+        - "ItemTransport|furniture removal services"
+        - "ItemTransport|transportation services"
     seoDeepSeek:
       Enabled: true
       UseFake: false

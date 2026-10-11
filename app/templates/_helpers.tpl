@@ -395,10 +395,20 @@ Usage:
 {{- $_ := set $secretNames .name true -}}
 {{- end }}
 {{- range $key, $val := $map }}
+{{- if kindIs "slice" $val }}
+{{- range $i, $item := $val }}
+{{- $envName := printf "%s%s__%d" $prefix $key $i -}}
+{{- if not (hasKey $secretNames $envName) }}
+- name: {{ $envName }}
+  value: {{ $item | quote }}
+{{- end }}
+{{- end }}
+{{- else }}
 {{- $envName := printf "%s%s" $prefix $key -}}
 {{- if not (hasKey $secretNames $envName) }}
 - name: {{ $envName }}
   value: {{ $val | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
