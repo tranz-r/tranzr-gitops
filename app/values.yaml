@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.124.1"
+  movesVersion: "0.124.2"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -501,6 +501,9 @@ deployments:
       PromptVersion: seo.prompt.v1
       TimeoutSeconds: 60
       MaxRetries: 1
+      # Structured draft JSON — keep thinking off (API default is on).
+      ThinkingEnabled: false
+      MaxCompletionTokens: 8192
       DailyTokenBudget: 0
       DailyCostUsdEstimate: 0
       MonthlyBudgetUsd: 0
