@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.125.0"
+  movesVersion: "0.126.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -498,7 +498,7 @@ deployments:
       BaseUrl: "https://api.deepseek.com"
       Model: deepseek-flash
       ApiKey: ""
-      PromptVersion: seo.prompt.v2
+      PromptVersion: seo.prompt.v3
       TimeoutSeconds: 60
       MaxRetries: 1
       # Structured draft JSON — keep thinking off (API default is on).
@@ -530,6 +530,10 @@ deployments:
       PostTypes: page,services
       PageSize: 100
       MaxPagesPerType: 50
+      DraftPostType: services
+      AppOrigin: "https://app.tranzzer.com"
+      UseElementorDraft: true
+      ElementorTemplateId: 0
     # SEO-17 PostHog page aggregates — UseFake true until SEO-30 wires PersonalApiKey (not Capture key).
     seoPostHogImport:
       Enabled: false
