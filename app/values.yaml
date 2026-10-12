@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.126.1"
+  movesVersion: "0.126.2"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -531,7 +531,7 @@ deployments:
       PageSize: 100
       MaxPagesPerType: 50
       DraftPostType: services
-      AppOrigin: "https://app.tranzzer.com"
+      AppOrigin: "https://tranzzer.com"
       UseElementorDraft: true
       ElementorTemplateId: 0
     # SEO-17 PostHog page aggregates — UseFake true until SEO-30 wires PersonalApiKey (not Capture key).
