@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.126.3"
+  movesVersion: "0.126.4"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -498,7 +498,7 @@ deployments:
       BaseUrl: "https://api.deepseek.com"
       Model: deepseek-flash
       ApiKey: ""
-      PromptVersion: seo.prompt.v3
+      PromptVersion: seo.prompt.v4
       TimeoutSeconds: 60
       MaxRetries: 1
       # Structured draft JSON — keep thinking off (API default is on).
