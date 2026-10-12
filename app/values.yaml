@@ -531,7 +531,7 @@ deployments:
       PageSize: 100
       MaxPagesPerType: 50
       DraftPostType: services
-      AppOrigin: "https://app.tranzzer.com"
+      AppOrigin: "https://tranzzer.com"
       UseElementorDraft: true
       ElementorTemplateId: 0
     # SEO-17 PostHog page aggregates — UseFake true until SEO-30 wires PersonalApiKey (not Capture key).
