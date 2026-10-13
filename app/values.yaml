@@ -488,8 +488,7 @@ deployments:
       SerpDepth: 10
       LabsTaskEstimateUsd: "0.072"
       SerpCheckEstimateUsd: "0.0006"
-      # Optional Labs seeds as "Vertical|keyword". Empty → app ResolveSeeds defaults.
-      # Production overrides in values-production.yaml (Google Ads winners).
+      # Obsolete: discovery seeds are Admin CRUD / SeoSeeds (DB-only). Ignored by app.
       Seeds: []
     # SEO-22 DeepSeek — Enabled false; UseFake true until SEO-30 wires ApiKey secret.
     seoDeepSeek:
