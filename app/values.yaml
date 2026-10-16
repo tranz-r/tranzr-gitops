@@ -134,6 +134,11 @@ images:
     repository: ghcr.io/tranz-r/notifications-db-migrator
   whisperStt:
     repository: ghcr.io/tranz-r/tranzr-whisper-stt
+  vroom:
+    # Hardened image built from tranzr-moves-services/deploy/vroom (IT-06).
+    # Until CI publishes digests, pin the validated upstream digest via digest field.
+    repository: ghcr.io/vroom-project/vroom-docker
+    digest: "sha256:247d5683d6745c755d718a156d16b16aac80baccc276a003a68b986c13883b08"
 
 # Gateway API (Gateway + HTTPRoute) — production creates Gateway; staging attaches to labgrid Base.
 gatewayApi:
@@ -428,6 +433,40 @@ deployments:
         labelSelector:
           matchLabels:
             app.kubernetes.io/component: whisper-stt
+
+  vroom:
+    name: tranzr-vroom
+    enabled: false
+    replicaCount: 1
+    containerPort: 3000
+    env:
+      - name: VROOM_SOLVE_LIMIT_SECONDS
+        value: "2"
+      - name: VROOM_HARD_DEADLINE_MS
+        value: "3000"
+      - name: VROOM_MAX_CONCURRENT
+        value: "1"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "256Mi"
+        ephemeral-storage: "256Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+        ephemeral-storage: "512Mi"
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 15
+      periodSeconds: 15
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 10
 
   workerScheduler:
     name: tranzr-moves-worker-scheduler
@@ -794,6 +833,13 @@ services:
     type: ClusterIP
     port: 80
     targetPort: 8080
+    protocol: TCP
+
+  vroom:
+    name: tranzr-vroom
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
     protocol: TCP
 
 # Ingress configuration (staging / labgrid — production uses Gateway API instead).
