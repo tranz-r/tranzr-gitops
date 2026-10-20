@@ -51,6 +51,9 @@ spec:
           {{- end }}
           image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "phonon") | quote }}
           imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          # Image WORKDIR is not searchable by uid 1000. fermion stats the model
+          # name as a relative path, and that stat exits the process on EACCES.
+          workingDir: /var/phonon-cache
           args:
             {{- toYaml .Values.deployments.phonon.args | nindent 12 }}
           ports:
@@ -65,6 +68,8 @@ spec:
           volumeMounts:
             - name: phonon-cache
               mountPath: /var/phonon-cache
+            - name: phonon-tmp
+              mountPath: /tmp
           {{- with .Values.deployments.phonon.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
@@ -83,6 +88,9 @@ spec:
           {{- end }}
       volumes:
         - name: phonon-cache
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: phonon-tmp
           emptyDir:
             sizeLimit: 1Gi
       {{- with .Values.nodeSelector }}

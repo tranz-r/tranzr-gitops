@@ -462,6 +462,8 @@ deployments:
         value: "/var/phonon-cache/huggingface"
       - name: XDG_CACHE_HOME
         value: "/var/phonon-cache"
+      - name: TMPDIR
+        value: "/tmp"
     resources:
       requests:
         cpu: "2"
