@@ -78,6 +78,14 @@ spec:
             # production env-list replacement cannot drop it (null BaseAddress → 500).
             - name: MAPBOX_BASE_URL
               value: "https://api.mapbox.com"
+            # Item-transport pricing and the in-cluster solver. Keep outside
+            # backend.env so staging and production list replacement cannot drop them.
+            - name: ItemTransport__Enabled
+              value: "true"
+            - name: ItemTransport__Vroom__Enabled
+              value: "true"
+            - name: ItemTransport__Vroom__BaseUrl
+              value: "http://tranzr-vroom/"
             # Vision V1 / Photo Inventory — keep outside backend.env so production
             # list replacement cannot drop dark gates or activation toggles.
             {{- include "tranzrmoves.visionApiEnv" (dict "root" .) | nindent 12 }}

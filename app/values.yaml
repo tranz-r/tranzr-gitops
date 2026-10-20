@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.127.2"
+  movesVersion: "0.129.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -135,10 +135,8 @@ images:
   whisperStt:
     repository: ghcr.io/tranz-r/tranzr-whisper-stt
   vroom:
-    # Hardened image built from tranzr-moves-services/deploy/vroom (IT-06).
-    # Until CI publishes digests, pin the validated upstream digest via digest field.
     repository: ghcr.io/vroom-project/vroom-docker
-    digest: "sha256:247d5683d6745c755d718a156d16b16aac80baccc276a003a68b986c13883b08"
+    tag: "v1.15.0"
 
 # Gateway API (Gateway + HTTPRoute) — production creates Gateway; staging attaches to labgrid Base.
 gatewayApi:
@@ -436,7 +434,7 @@ deployments:
 
   vroom:
     name: tranzr-vroom
-    enabled: false
+    enabled: true
     replicaCount: 1
     containerPort: 3000
     env:
