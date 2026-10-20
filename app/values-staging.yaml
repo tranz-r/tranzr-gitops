@@ -54,6 +54,9 @@ observability:
 # Service DNS: redis.redis-system:6379, rabbitmq.rabbitmq-system:5672 — see platformMessaging in values.yaml.
 
 deployments:
+  # Phonon-2 trial. Whisper stays up; the API provider below selects Phonon.
+  phonon:
+    enabled: true
   # NOTE: this list *replaces* values.yaml deployments.backend.env (Helm merge).
   # Keep non-URL base env here so Mapbox/Speech/notifications stay intact.
   # Photo policy / MIME / AsyncQueue producer env come from shared helpers + values.yaml.
@@ -87,6 +90,10 @@ deployments:
         value: "mailto:ops@tranzzer.com"
       - name: SpeechInventory__SttBaseUrl
         value: "http://tranzr-whisper-stt"
+      - name: SpeechInventory__Provider
+        value: "Phonon"
+      - name: SpeechInventory__PhononBaseUrl
+        value: "http://tranzr-phonon"
       - name: SpeechInventory__MaxDurationSeconds
         value: "15"
       - name: SpeechInventory__HardCeilingSeconds

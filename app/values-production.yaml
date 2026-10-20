@@ -76,6 +76,9 @@ gatewayApi:
   # Override nested keys here as needed, e.g. gateway.hostname, routes.api.hostname
 
 deployments:
+  # Phonon-2. Whisper stays up; the API provider below selects Phonon.
+  phonon:
+    enabled: true
   backend:
     replicaCount: 2
     # NOTE: this list *replaces* values.yaml deployments.backend.env (Helm merge).
@@ -108,6 +111,10 @@ deployments:
         value: "mailto:ops@tranzzer.com"
       - name: SpeechInventory__SttBaseUrl
         value: "http://tranzr-whisper-stt"
+      - name: SpeechInventory__Provider
+        value: "Phonon"
+      - name: SpeechInventory__PhononBaseUrl
+        value: "http://tranzr-phonon"
       - name: SpeechInventory__MaxDurationSeconds
         value: "15"
       - name: SpeechInventory__HardCeilingSeconds
