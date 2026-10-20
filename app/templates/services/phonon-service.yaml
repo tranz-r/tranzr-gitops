@@ -1,0 +1,25 @@
+{{- if .Values.deployments.phonon.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.phonon.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-phonon
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: phonon
+    helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  type: {{ .Values.services.phonon.type }}
+  ports:
+    - port: {{ .Values.services.phonon.port }}
+      targetPort: {{ .Values.services.phonon.targetPort }}
+      protocol: {{ .Values.services.phonon.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-phonon
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: phonon
+{{- end }}

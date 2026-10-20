@@ -1,0 +1,23 @@
+{{- if .Values.deployments.vroom.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.services.vroom.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-vroom
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: vroom
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.services.vroom.type }}
+  ports:
+    - port: {{ .Values.services.vroom.port }}
+      targetPort: {{ .Values.services.vroom.targetPort }}
+      protocol: {{ .Values.services.vroom.protocol }}
+      name: http
+  selector:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-vroom
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: vroom
+{{- end }}

@@ -1,0 +1,108 @@
+{{- if .Values.deployments.phonon.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.deployments.phonon.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-phonon
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: phonon
+    helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.deployments.phonon.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-phonon
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: phonon
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-phonon
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: phonon
+        helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: phonon
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "phonon") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          # Image WORKDIR is not searchable by uid 1000. fermion stats the model
+          # name as a relative path, and that stat exits the process on EACCES.
+          workingDir: /var/phonon-cache
+          args:
+            {{- toYaml .Values.deployments.phonon.args | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.deployments.phonon.containerPort }}
+              protocol: TCP
+          env:
+            {{- range .Values.deployments.phonon.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: phonon-cache
+              mountPath: /var/phonon-cache
+            - name: phonon-tmp
+              mountPath: /tmp
+          {{- with .Values.deployments.phonon.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.phonon.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.phonon.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.phonon.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: phonon-cache
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: phonon-tmp
+          emptyDir:
+            sizeLimit: 1Gi
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,65 @@
+{{- if .Values.deployments.vroom.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.deployments.vroom.name }}
+  namespace: {{ .Release.Namespace | default .Values.namespaceOverride }}
+  labels:
+    app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-vroom
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: vroom
+    {{- include "tranzrmoves.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.deployments.vroom.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-vroom
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: vroom
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tranzrmoves.name" . }}-vroom
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: vroom
+        helm.sh/chart: {{ include "tranzrmoves.chart" . }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+    spec:
+      serviceAccountName: {{ include "tranzrmoves.serviceAccountName" . }}
+      containers:
+        - name: vroom
+          image: {{ include "tranzrmoves.imageRef" (dict "root" . "key" "vroom") | quote }}
+          imagePullPolicy: {{ include "tranzrmoves.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.deployments.vroom.containerPort }}
+              protocol: TCP
+          env:
+            {{- range .Values.deployments.vroom.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          {{- with .Values.deployments.vroom.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.vroom.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployments.vroom.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: vroom-scratch
+              mountPath: /tmp/vroom-scratch
+            - name: vroom-logs
+              mountPath: /tmp/vroom-logs
+      volumes:
+        - name: vroom-scratch
+          emptyDir: {}
+        - name: vroom-logs
+          emptyDir: {}
+{{- end }}

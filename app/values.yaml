@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, notifications, and whisper-stt (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.127.2"
+  movesVersion: "0.130.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.37.1"
@@ -134,6 +134,12 @@ images:
     repository: ghcr.io/tranz-r/notifications-db-migrator
   whisperStt:
     repository: ghcr.io/tranz-r/tranzr-whisper-stt
+  vroom:
+    repository: ghcr.io/vroom-project/vroom-docker
+    tag: "v1.15.0"
+  phonon:
+    repository: ghcr.io/fermionresearch/phonon-cpu
+    tag: "2.0.9"
 
 # Gateway API (Gateway + HTTPRoute) — production creates Gateway; staging attaches to labgrid Base.
 gatewayApi:
@@ -284,6 +290,10 @@ deployments:
         value: "mailto:ops@tranzzer.com"
       - name: SpeechInventory__SttBaseUrl
         value: "http://tranzr-whisper-stt"
+      - name: SpeechInventory__Provider
+        value: "Whisper"
+      - name: SpeechInventory__PhononBaseUrl
+        value: "http://tranzr-phonon"
       - name: SpeechInventory__MaxDurationSeconds
         value: "15"
       - name: SpeechInventory__HardCeilingSeconds
@@ -428,6 +438,89 @@ deployments:
         labelSelector:
           matchLabels:
             app.kubernetes.io/component: whisper-stt
+
+  # Official Phonon-2 CPU image. Off unless an environment turns it on.
+  # Staging and production select it with SpeechInventory__Provider=Phonon. Whisper stays deployed.
+  phonon:
+    name: tranzr-phonon
+    enabled: false
+    replicaCount: 1
+    containerPort: 8080
+    args:
+      - serve
+      - phonon-2
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --threads
+      - "2"
+    env:
+      - name: HOME
+        value: "/var/phonon-cache"
+      - name: HF_HOME
+        value: "/var/phonon-cache/huggingface"
+      - name: XDG_CACHE_HOME
+        value: "/var/phonon-cache"
+      - name: TMPDIR
+        value: "/tmp"
+    resources:
+      requests:
+        cpu: "2"
+        memory: 2Gi
+      limits:
+        cpu: "2"
+        memory: 3Gi
+    startupProbe:
+      httpGet:
+        path: /health
+        port: http
+      periodSeconds: 10
+      failureThreshold: 30
+    livenessProbe:
+      httpGet:
+        path: /healthz
+        port: http
+      periodSeconds: 20
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: http
+      periodSeconds: 10
+
+  vroom:
+    name: tranzr-vroom
+    enabled: true
+    replicaCount: 1
+    containerPort: 3000
+    env:
+      - name: VROOM_SOLVE_LIMIT_SECONDS
+        value: "2"
+      - name: VROOM_HARD_DEADLINE_MS
+        value: "3000"
+      - name: VROOM_MAX_CONCURRENT
+        value: "1"
+    resources:
+      requests:
+        cpu: "500m"
+        memory: "256Mi"
+        ephemeral-storage: "256Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+        ephemeral-storage: "512Mi"
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 15
+      periodSeconds: 15
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: http
+      initialDelaySeconds: 10
+      periodSeconds: 10
 
   workerScheduler:
     name: tranzr-moves-worker-scheduler
@@ -794,6 +887,20 @@ services:
     type: ClusterIP
     port: 80
     targetPort: 8080
+    protocol: TCP
+
+  phonon:
+    name: tranzr-phonon
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+
+  vroom:
+    name: tranzr-vroom
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
     protocol: TCP
 
 # Ingress configuration (staging / labgrid — production uses Gateway API instead).
