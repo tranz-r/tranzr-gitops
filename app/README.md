@@ -268,7 +268,7 @@ on Sync resources is fine; it is not a hook). Chatwoot migrate: default/staging
 Helm `post-install,post-upgrade` → PostSync; production overlay uses dual-phase
 `pre-install,post-upgrade`. Test hooks are unsupported/skipped.
 
-Shared image pin (backend/worker/migrator/notifications/whisper):
+Shared image pin (backend/worker/migrator/notifications):
 
 ```yaml
 images:
