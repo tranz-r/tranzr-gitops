@@ -76,7 +76,7 @@ gatewayApi:
   # Override nested keys here as needed, e.g. gateway.hostname, routes.api.hostname
 
 deployments:
-  # Phonon-2. Whisper stays up; the API provider below selects Phonon.
+  # Phonon-2 is the speech-inventory engine.
   phonon:
     enabled: true
   backend:
@@ -109,8 +109,6 @@ deployments:
         value: "https://portal.tranzzer.com"
       - name: WebPush__Subject
         value: "mailto:ops@tranzzer.com"
-      - name: SpeechInventory__SttBaseUrl
-        value: "http://tranzr-whisper-stt"
       - name: SpeechInventory__Provider
         value: "Phonon"
       - name: SpeechInventory__PhononBaseUrl
@@ -129,12 +127,6 @@ deployments:
     additionalEnvFromSecrets:
       - name: Seo__PostHog__ProjectApiKey
         secretKey: tranzr-seo-posthog-project-api-key
-
-  whisperStt:
-    replicaCount: 2
-    autoscaling:
-      minReplicas: 2
-      maxReplicas: 5
 
   workerProcessor:
     env:
