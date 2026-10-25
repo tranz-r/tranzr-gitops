@@ -46,6 +46,10 @@ externalSecrets:
       description: "PostHog project API key for seo.biz.v1 Capture (API host)"
       remoteRef:
         key: tranzr-seo-posthog-project-api-key
+    - secretKey: tranzr-seo-n8n-shared-secret
+      description: "Shared secret for n8n SEO ingest, result, and approve webhook (production API)"
+      remoteRef:
+        key: tranzr-seo-n8n-shared-secret
 
 global:
   # Production cluster StorageClass (must exist on the prod cluster)
@@ -124,9 +128,45 @@ deployments:
         value: "true"
       - name: Seo__PostHog__Host
         value: "https://eu.i.posthog.com"
+      # n8n daily import calls the API, which runs the same live tranzzer.com import
+      # the worker scheduler already runs. Worker import stays on.
+      - name: Seo__ImportEnabled
+        value: "true"
+      - name: Seo__SearchConsole__Enabled
+        value: "true"
+      - name: Seo__SearchConsole__UseFake
+        value: "false"
+      - name: Seo__SearchConsole__SiteUrl
+        value: "sc-domain:tranzzer.com"
+      - name: Seo__WordPress__Enabled
+        value: "true"
+      - name: Seo__WordPress__UseFake
+        value: "false"
+      - name: Seo__WordPress__BaseUrl
+        value: "https://tranzzer.com"
+      - name: Seo__WordPress__Username
+        value: "mcvavy@gmail.com"
+      - name: Seo__PostHogImport__Enabled
+        value: "true"
+      - name: Seo__PostHogImport__UseFake
+        value: "false"
+      - name: Seo__PostHogImport__Host
+        value: "https://eu.i.posthog.com"
+      - name: Seo__PostHogImport__ProjectId
+        value: "279484"
+      - name: Seo__N8n__WebhookUrl
+        value: "https://automata.labgrid.net/webhook/seo-generate-draft"
     additionalEnvFromSecrets:
       - name: Seo__PostHog__ProjectApiKey
         secretKey: tranzr-seo-posthog-project-api-key
+      - name: Seo__SearchConsole__ServiceAccountJson
+        secretKey: tranzr-seo-gsc-service-account-json
+      - name: Seo__WordPress__ApplicationPassword
+        secretKey: tranzr-seo-wordpress-app-password
+      - name: Seo__PostHogImport__PersonalApiKey
+        secretKey: tranzr-seo-posthog-personal-api-key
+      - name: Seo__N8n__SharedSecret
+        secretKey: tranzr-seo-n8n-shared-secret
 
   workerProcessor:
     env:
@@ -145,8 +185,9 @@ deployments:
     seo:
       Enabled: true
       ImportEnabled: true
-      DiscoveryEnabled: true
-      GenerationEnabled: true
+      # Discovery and draft writing run in n8n. The worker keeps the daily import.
+      DiscoveryEnabled: false
+      GenerationEnabled: false
     seoDataForSeo:
       Enabled: true
       UseFake: false
