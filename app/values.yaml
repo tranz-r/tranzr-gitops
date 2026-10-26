@@ -118,7 +118,7 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.135.1"
+  movesVersion: "0.136.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
     tag: "0.39.0"
