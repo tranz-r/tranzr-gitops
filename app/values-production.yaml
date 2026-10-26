@@ -17,29 +17,17 @@ externalSecrets:
       description: "Supabase transaction pooler connection string (apps)"
       remoteRef:
         key: tranzr-supabase-transaction-database-connection-string
-    # SEO-30 — production vault (tranzr-moves); staging Fake Gate D does not use these.
-    - secretKey: tranzr-seo-dataforseo-login
-      description: "DataForSEO API login (SEO worker Scheduler)"
-      remoteRef:
-        key: tranzr-seo-dataforseo-login
-    - secretKey: tranzr-seo-dataforseo-password
-      description: "DataForSEO API password (SEO worker Scheduler)"
-      remoteRef:
-        key: tranzr-seo-dataforseo-password
-    - secretKey: tranzr-seo-deepseek-api-key
-      description: "DeepSeek API key (SEO worker Scheduler)"
-      remoteRef:
-        key: tranzr-seo-deepseek-api-key
+    # SEO source secrets stay on the API so POST /import can still fetch them.
     - secretKey: tranzr-seo-gsc-service-account-json
-      description: "Google Search Console service account JSON (SEO worker Scheduler)"
+      description: "Google Search Console service account JSON (production API)"
       remoteRef:
         key: tranzr-seo-gsc-service-account-json
     - secretKey: tranzr-seo-wordpress-app-password
-      description: "WordPress Application Password (SEO worker Scheduler)"
+      description: "WordPress Application Password (production API)"
       remoteRef:
         key: tranzr-seo-wordpress-app-password
     - secretKey: tranzr-seo-posthog-personal-api-key
-      description: "PostHog Personal API key for Query aggregates (SEO worker Scheduler)"
+      description: "PostHog Personal API key for Query aggregates (production API)"
       remoteRef:
         key: tranzr-seo-posthog-personal-api-key
     - secretKey: tranzr-seo-posthog-project-api-key
@@ -180,49 +168,6 @@ deployments:
       FrontendBaseUrl: https://tranzzer.com
     e2eDataPurge:
       Enabled: false
-    # The worker schedule is off. n8n owns the daily import.
-    # ImportEnabled stays true so POST /import remains the rollback call.
-    seo:
-      Enabled: false
-      ImportEnabled: true
-      DiscoveryEnabled: false
-      GenerationEnabled: false
-    seoDataForSeo:
-      Enabled: true
-      UseFake: false
-      # Discovery seeds are Admin CRUD / SeoSeeds table (DB-only).
-      # Apply migration AddSeoSeeds before relying on discovery; Helm Seeds ignored.
-      Seeds: []
-    seoDeepSeek:
-      Enabled: true
-      UseFake: false
-    seoSearchConsole:
-      Enabled: true
-      UseFake: false
-      SiteUrl: "sc-domain:tranzzer.com"
-    seoWordPress:
-      Enabled: true
-      UseFake: false
-      BaseUrl: "https://tranzzer.com"
-      Username: "mcvavy@gmail.com"
-    seoPostHogImport:
-      Enabled: true
-      UseFake: false
-      ProjectId: "279484"
-      Host: https://eu.i.posthog.com
-    additionalEnvFromSecrets:
-      - name: Seo__DataForSEO__Login
-        secretKey: tranzr-seo-dataforseo-login
-      - name: Seo__DataForSEO__Password
-        secretKey: tranzr-seo-dataforseo-password
-      - name: Seo__DeepSeek__ApiKey
-        secretKey: tranzr-seo-deepseek-api-key
-      - name: Seo__SearchConsole__ServiceAccountJson
-        secretKey: tranzr-seo-gsc-service-account-json
-      - name: Seo__WordPress__ApplicationPassword
-        secretKey: tranzr-seo-wordpress-app-password
-      - name: Seo__PostHogImport__PersonalApiKey
-        secretKey: tranzr-seo-posthog-personal-api-key
 
   # VisionNormalizer only: SESSION pooler keywords (advisory locks). Reuses root
   # appConnectionSecretKey (transaction secret name whose value is already SESSION host:5432).
