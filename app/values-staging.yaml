@@ -110,24 +110,6 @@ deployments:
   workerScheduler:
     e2eDataPurge:
       Enabled: true
-    # SEO runs only in production against tranzzer.com. Staging must not import,
-    # discover, or write drafts for tranzrmoves.com. Local testing stays on the
-    # developer machine (Compose .env and API user-secrets), using fakes or tranzzer.com.
-    seo:
-      Enabled: false
-      ImportEnabled: false
-      DiscoveryEnabled: false
-      GenerationEnabled: false
-    seoDataForSeo:
-      Enabled: false
-    seoDeepSeek:
-      Enabled: false
-    seoSearchConsole:
-      Enabled: false
-    seoWordPress:
-      Enabled: false
-    seoPostHogImport:
-      Enabled: false
   notifications:
     enabled: true
 

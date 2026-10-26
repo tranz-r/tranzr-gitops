@@ -382,37 +382,3 @@ Usage: {{ include "tranzrmoves.visionSchedulerSecretEnv" (dict "root" .) | ninde
       name: {{ $root.Values.externalSecrets.name }}
       key: tranzr-azure-storage-connection-string
 {{- end }}
-
-{{/*
-Emit plain Seo__* env from a values map, skipping names already wired via
-workerScheduler.additionalEnvFromSecrets. Duplicate env names (empty value +
-valueFrom) break strategic merge / Argo CD ComparisonError.
-Usage:
-  {{ include "tranzrmoves.seoMapEnv" (dict "root" . "prefix" "Seo__DataForSEO__" "map" .Values.deployments.workerScheduler.seoDataForSeo) | nindent 12 }}
-*/}}
-{{- define "tranzrmoves.seoMapEnv" -}}
-{{- $root := .root -}}
-{{- $prefix := .prefix -}}
-{{- $map := .map | default dict -}}
-{{- $secretNames := dict -}}
-{{- range ($root.Values.deployments.workerScheduler.additionalEnvFromSecrets | default list) }}
-{{- $_ := set $secretNames .name true -}}
-{{- end }}
-{{- range $key, $val := $map }}
-{{- if kindIs "slice" $val }}
-{{- range $i, $item := $val }}
-{{- $envName := printf "%s%s__%d" $prefix $key $i -}}
-{{- if not (hasKey $secretNames $envName) }}
-- name: {{ $envName }}
-  value: {{ $item | quote }}
-{{- end }}
-{{- end }}
-{{- else }}
-{{- $envName := printf "%s%s" $prefix $key -}}
-{{- if not (hasKey $secretNames $envName) }}
-- name: {{ $envName }}
-  value: {{ $val | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
