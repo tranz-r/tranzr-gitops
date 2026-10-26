@@ -128,8 +128,8 @@ deployments:
         value: "true"
       - name: Seo__PostHog__Host
         value: "https://eu.i.posthog.com"
-      # n8n daily import calls the API, which runs the same live tranzzer.com import
-      # the worker scheduler already runs. Worker import stays on.
+      # n8n posts Search Console, WordPress, and PostHog rows.
+      # POST /import stays available as rollback while these source settings remain.
       - name: Seo__ImportEnabled
         value: "true"
       - name: Seo__SearchConsole__Enabled
@@ -180,12 +180,11 @@ deployments:
       FrontendBaseUrl: https://tranzzer.com
     e2eDataPurge:
       Enabled: false
-    # SEO live — authorised production activation (SEO-31). AKV secrets pre-wired.
-    # DataForSEO budgets stay US$1/day / US$10/month (base values). Pause via seoOperations.Paused.
+    # The worker schedule is off. n8n owns the daily import.
+    # ImportEnabled stays true so POST /import remains the rollback call.
     seo:
-      Enabled: true
+      Enabled: false
       ImportEnabled: true
-      # Discovery and draft writing run in n8n. The worker keeps the daily import.
       DiscoveryEnabled: false
       GenerationEnabled: false
     seoDataForSeo:
