@@ -80,6 +80,18 @@ spec:
               value: "https://api.mapbox.com"
             # Item-transport pricing and the in-cluster solver. Keep outside
             # backend.env so staging and production list replacement cannot drop them.
+            {{- $routeMode := .Values.features.itemTransport.routePlanningMode | default "Legacy" }}
+            {{- if not (has $routeMode (list "Legacy" "Shadow" "Enabled" "ReadOnly")) }}
+            {{- fail "features.itemTransport.routePlanningMode must be Legacy, Shadow, Enabled or ReadOnly" }}
+            {{- end }}
+            {{- $reservationMinutes := int .Values.features.itemTransport.routeReservationMinutes }}
+            {{- if or (lt $reservationMinutes 1) (gt $reservationMinutes 60) }}
+            {{- fail "features.itemTransport.routeReservationMinutes must be between 1 and 60" }}
+            {{- end }}
+            - name: ItemTransport__RoutePlanningMode
+              value: {{ $routeMode | quote }}
+            - name: ItemTransport__RouteReservationMinutes
+              value: {{ $reservationMinutes | quote }}
             - name: ItemTransport__Enabled
               value: "true"
             - name: ItemTransport__Vroom__Enabled

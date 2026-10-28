@@ -44,6 +44,8 @@ global:
   defaultStorageClass: "hcloud-volumes"
 
 features:
+  itemTransport:
+    routePlanningMode: Enabled
   webQuoteTurnstile:
     # Production activation requires a separate, explicit rollout decision.
     enabled: true
