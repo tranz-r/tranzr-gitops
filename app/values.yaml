@@ -8,6 +8,10 @@ global:
 
 # Runtime feature switches. Environment overrides opt in explicitly.
 features:
+  itemTransport:
+    # Activation is explicit per environment; pause new sales with ReadOnly after rollout.
+    routePlanningMode: Legacy
+    routeReservationMinutes: 15
   webQuoteTurnstile:
     # Backend enforcement is activated per environment only after the matching
     # Web Quote site key and API secret have been deployed and verified.
@@ -118,10 +122,10 @@ database:
 # Container images — bump movesVersion once for backend, worker, migrators, and notifications (same CI release)
 images:
   pullPolicy: IfNotPresent
-  movesVersion: "0.136.1"
+  movesVersion: "0.138.0"
   gateway:
     repository: ghcr.io/tranz-r/api-gateway
-    tag: "0.39.0"
+    tag: "0.39.1"
   movesServices:
     repository: ghcr.io/tranz-r/tranzr-moves-services
   movesWorker:

@@ -10,6 +10,10 @@ global:
   # to the StorageClass that exists on the staging cluster (can differ from production).
   defaultStorageClass: "synology-iscsi-delete-wffc"
 
+features:
+  itemTransport:
+    routePlanningMode: Enabled
+
 ingress:
   enabled: false
   # Edge is Gateway API (labgrid-gateway @ 192.168.1.205) via NPM → http://.205:80.
