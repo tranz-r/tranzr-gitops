@@ -50,8 +50,8 @@ features:
       baseUrl: "https://openrouter.ai"
       # Per-provider-request timeout in seconds.
       timeoutSeconds: 45
-      # Maximum generated output tokens per request.
-      maxTokens: 2000
+      # Maximum generated output tokens per request (inventory JSON headroom; Instruct has no reasoning tax).
+      maxTokens: 4000
       # Hard limit on provider response payload size (bytes).
       maxResponseBodyBytes: 262144
       # Caps simultaneous per-image processor requests to OpenRouter.
