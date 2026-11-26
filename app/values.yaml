@@ -48,8 +48,9 @@ features:
     openRouter:
       # OpenRouter provider service base URL.
       baseUrl: "https://openrouter.ai"
-      # Per-provider-request timeout in seconds.
-      timeoutSeconds: 45
+      # Per-provider-request timeout in seconds (headers + body; VL inventory
+      # often needs >45s after DeepInfra returns 200 headers).
+      timeoutSeconds: 90
       # Maximum generated output tokens per request (inventory JSON headroom; Instruct has no reasoning tax).
       maxTokens: 4000
       # Hard limit on provider response payload size (bytes).
