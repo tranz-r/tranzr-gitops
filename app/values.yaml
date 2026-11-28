@@ -473,11 +473,16 @@ deployments:
       DepositChargeTimeZone: Europe/London
     quoteReminders:
       Enabled: true
-      ScanIntervalMinutes: 60
-      IdleHoursBeforeReminder: 24
-      ReminderCooldownDays: 7
+      ScanIntervalMinutes: 15
+      ReminderHoursAfterEligible__0: 5
+      ReminderHoursAfterEligible__1: 24
+      ReminderHoursAfterEligible__2: 72
+      PurgeAfterDays: 7
+      PurgeScanIntervalMinutes: 60
+      PurgeBatchSize: 50
+      PurgeEnabled: true
       FrontendBaseUrl: https://tranzrmoves.com
-      ResumeTokenLifetimeDays: 30
+      ResumeTokenLifetimeDays: 7
       SendRemindersForBusinessQuotes: false
     # Staging enables this in values-staging.yaml. Keep false in production.
     e2eDataPurge:
